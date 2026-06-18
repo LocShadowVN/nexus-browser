@@ -10,20 +10,21 @@ import concurrent.futures
 import requests
 from datetime import datetime
 
-# 1. TỐI ƯU TỐC ĐỘ ĐẬM CHẤT BRAVE (CHROMIUM FLAGS)
+# 1. TỐI ƯU TỐC ĐỘ & CHỐNG SẬP GPU (CHROMIUM FLAGS)
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--ignore-gpu-blocklist "
     "--enable-gpu-rasterization "
-    "--enable-zero-copy "
-    "--disk-cache-size=1 "  # Ép buộc dùng RAM cache thay vì ghi ổ cứng
-    "--dns-prefetch-disable=false"
+    "--enable-features=NetworkService "
+    "--disable-gpu-shader-disk-cache "
+    "--disable-features=CalculateNativeWinOcclusion"
 )
 
-from PyQt6.QtCore import QUrl, QTimer, Qt, QSize, QThread, pyqtSignal
+from PyQt6.QtCore import (QUrl, QTimer, Qt, QSize, QThread, pyqtSignal, QObject, 
+                          QEventLoop)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QToolBar, QLineEdit,
                              QPushButton, QVBoxLayout, QWidget, QSplitter, QTextEdit,
-                             QHBoxLayout, QCheckBox, QMessageBox, QLabel, QComboBox,
-                             QMenu, QDialog, QListWidget, QProgressBar, QFileDialog)
+                             QHBoxLayout, QMessageBox, QLabel, QMenu, QDialog, 
+                             QListWidget, QProgressBar, QFileDialog)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineUrlRequestInterceptor
 from PyQt6.QtNetwork import QNetworkProxy
@@ -49,12 +50,19 @@ class NexusAdBlocker(QWebEngineUrlRequestInterceptor):
                 break
 
 # ==========================================
-# QUẢN LÝ DỮ LIỆU (LỊCH SỬ, DẤU TRANG, MẬT KHẨU)
+# QUẢN LÝ DỮ LIỆU (DEBOUNCED I/O - CHỐNG ĐƠ GUI)
 # ==========================================
-class DataManager:
+class DataManager(QObject):
     def __init__(self):
+        super().__init__()
         self.file = "nexus_config.json"
         self.data = self.load()
+        self._dirty = False
+        
+        # Timer ghi file nền mỗi 2 giây để không chặn Main Thread
+        self._save_timer = QTimer(self)
+        self._save_timer.timeout.connect(self._flush_save)
+        self._save_timer.start(2000) 
         
     def load(self):
         if os.path.exists(self.file):
@@ -65,14 +73,21 @@ class DataManager:
         return {"passwords": {}, "history": [], "bookmarks": []}
         
     def save(self):
-        with open(self.file, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, indent=4)
+        try:
+            with open(self.file, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, indent=4)
+        except: pass
             
     def add_history(self, url, title):
         if not url.startswith("http"): return
         self.data["history"].insert(0, {"url": url, "title": title, "time": datetime.now().strftime("%Y-%m-%d %H:%M")})
         if len(self.data["history"]) > 500: self.data["history"] = self.data["history"][:500]
-        self.save()
+        self._dirty = True # Đánh dấu cần lưu, không lưu ngay lập tức
+        
+    def _flush_save(self):
+        if self._dirty:
+            self.save()
+            self._dirty = False
 
 # ==========================================
 # HỆ THỐNG EXTENSION & QUÉT MÃ ĐỘC
@@ -130,7 +145,7 @@ FLUENT_QSS = """
 """
 
 # ==========================================
-# BỘ TẢI XUỐNG 64 LUỒNG SIÊU TỐC KIỂU IDM
+# BỘ TẢI XUỐNG 64 LUỒNG (FIX THREAD FLOOD)
 # ==========================================
 class NexusIDMEngine(QThread):
     progress_signal = pyqtSignal(int, float)
@@ -154,12 +169,13 @@ class NexusIDMEngine(QThread):
                 self.download_single_thread(headers)
                 return
 
-            num_threads = min(64, file_size)
+            num_threads = min(64, max(1, file_size // (1024*1024))) # Tối ưu số luồng theo dung lượng
             chunk_size = math.ceil(file_size / num_threads)
             
             self.total_downloaded = 0
             self.lock = threading.Lock()
             start_time = time.time()
+            self.last_emit_time = 0 # Biến chống nghẽn Event Loop
 
             def download_chunk(idx, start, end):
                 if not self.is_running: return
@@ -177,27 +193,28 @@ class NexusIDMEngine(QThread):
                                     f.write(chunk)
                                     with self.lock:
                                         self.total_downloaded += len(chunk)
-                                        elapsed = time.time() - start_time
-                                        speed = (self.total_downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
-                                        percent = int((self.total_downloaded / file_size) * 100)
-                                        self.progress_signal.emit(percent, speed)
+                                        current_time = time.time()
+                                        # CHỈ BẮN TÍN HIỆU 5 LẦN/GIÂY ĐỂ KHÔNG ĐƠ GUI
+                                        if current_time - self.last_emit_time > 0.2:
+                                            self.last_emit_time = current_time
+                                            elapsed = current_time - start_time
+                                            speed = (self.total_downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                                            percent = int((self.total_downloaded / file_size) * 100)
+                                            self.progress_signal.emit(percent, speed)
                 except Exception as e:
                     self.error_signal.emit(f"Chunk {idx} error: {str(e)}")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=64) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
                 futures = []
                 for i in range(num_threads):
                     start = i * chunk_size
                     end = start + chunk_size - 1
-                    if i == num_threads - 1:
-                        end = file_size - 1
+                    if i == num_threads - 1: end = file_size - 1
                     futures.append(executor.submit(download_chunk, i, start, end))
                 
-                for future in concurrent.futures.as_completed(futures):
-                    pass
+                concurrent.futures.wait(futures)
 
-            if not self.is_running:
-                return
+            if not self.is_running: return
 
             with open(self.save_path, 'wb') as outfile:
                 for i in range(num_threads):
@@ -207,6 +224,7 @@ class NexusIDMEngine(QThread):
                             outfile.write(infile.read())
                         os.remove(temp_path)
                         
+            self.progress_signal.emit(100, 0.0)
             self.finished_signal.emit(self.save_path)
 
         except Exception as e:
@@ -219,6 +237,7 @@ class NexusIDMEngine(QThread):
                 total = int(r.headers.get('Content-Length', 0))
                 downloaded = 0
                 start_time = time.time()
+                last_emit = 0
                 with open(self.save_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=65536):
                         if not self.is_running: break
@@ -226,10 +245,13 @@ class NexusIDMEngine(QThread):
                             f.write(chunk)
                             downloaded += len(chunk)
                             if total > 0:
-                                elapsed = time.time() - start_time
-                                speed = (downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
-                                percent = int((downloaded / total) * 100)
-                                self.progress_signal.emit(percent, speed)
+                                current_time = time.time()
+                                if current_time - last_emit > 0.2:
+                                    last_emit = current_time
+                                    elapsed = current_time - start_time
+                                    speed = (downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                                    percent = int((downloaded / total) * 100)
+                                    self.progress_signal.emit(percent, speed)
                 self.finished_signal.emit(self.save_path)
         except Exception as e:
             self.error_signal.emit(str(e))
@@ -297,8 +319,9 @@ class NexusBrowser(QMainWindow):
         self.current_lang = "EN"
         self.idm_engine = None
         
-        # Cấu hình Profile & Bảo Mật Tầng Lõi
+        # Cấu hình Profile & Bảo Mật Tầng Lõi (Ép RAM Cache an toàn)
         self.profile = QWebEngineProfile.defaultProfile()
+        self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
         self.profile.setHttpUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 NexusBrowser/2.0")
         
         self.ad_blocker = NexusAdBlocker(self)
@@ -312,7 +335,6 @@ class NexusBrowser(QMainWindow):
         self.hibernation_timer.timeout.connect(self.check_hibernation)
         self.hibernation_timer.start(300000) 
         
-        # Tự động mở Google ngay khi khởi chạy
         self.add_new_tab(QUrl("https://www.google.com"), "Home")
 
     def setup_ui(self):
@@ -322,7 +344,6 @@ class NexusBrowser(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Toolbar
         self.toolbar = QToolBar()
         self.toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(self.toolbar)
@@ -340,7 +361,6 @@ class NexusBrowser(QMainWindow):
         self.btn_bookmark.setFixedWidth(40)
         self.btn_bookmark.clicked.connect(self.toggle_bookmark)
 
-        # Hamburger Menu
         self.menu_btn = QPushButton("☰")
         self.menu_btn.setFixedWidth(40)
         self.menu = QMenu(self)
@@ -371,25 +391,22 @@ class NexusBrowser(QMainWindow):
         self.toolbar.addWidget(self.btn_bookmark)
         self.toolbar.addWidget(self.menu_btn)
 
-        # Connect Nav
         self.btn_back.clicked.connect(lambda: self.current_tab().back() if isinstance(self.current_tab(), QWebEngineView) else None)
         self.btn_forward.clicked.connect(lambda: self.current_tab().forward() if isinstance(self.current_tab(), QWebEngineView) else None)
         self.btn_reload.clicked.connect(lambda: self.current_tab().reload() if isinstance(self.current_tab(), QWebEngineView) else None)
         self.btn_home.clicked.connect(lambda: self.add_new_tab(QUrl("https://google.com"), "Home"))
 
-        # Splitter
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_layout.addWidget(self.splitter)
 
-        # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.tabs.currentChanged.connect(self.update_title)
+        # FIX LỖI UX: Bắt sự kiện click vào Tiêu đề Tab để hồi sinh
+        self.tabs.currentChanged.connect(self.on_tab_changed) 
         self.splitter.addWidget(self.tabs)
 
-        # Sidebar AI
         self.sidebar = QWidget()
         self.sidebar.setFixedWidth(300)
         self.sidebar_layout = QVBoxLayout(self.sidebar)
@@ -407,7 +424,6 @@ class NexusBrowser(QMainWindow):
         self.splitter.addWidget(self.sidebar)
         self.splitter.setSizes([1100, 300])
 
-        # Download Bar (Ẩn mặc định)
         self.download_bar = QWidget()
         self.download_bar.setStyleSheet("background: #181825; border-top: 1px solid #313244;")
         self.download_layout = QVBoxLayout(self.download_bar)
@@ -416,19 +432,23 @@ class NexusBrowser(QMainWindow):
         self.download_bar.hide()
         self.main_layout.addWidget(self.download_bar)
 
+    def on_tab_changed(self, idx):
+        self.update_title(idx)
+        if idx >= 0:
+            w = self.tabs.widget(idx)
+            # Nếu widget là QLabel (đang đóng băng) -> Tự động hồi sinh
+            if isinstance(w, QLabel) and w.property("url"):
+                # Dùng singleShot để tránh crash Qt TabBar khi đang xử lý sự kiện
+                QTimer.singleShot(0, lambda: self.restore_tab(w))
+
     def current_tab(self):
         if self.tabs.count() > 0:
-            w = self.tabs.currentWidget()
-            if isinstance(w, QLabel) and w.property("url"):
-                self.restore_tab(w)
-                return self.tabs.currentWidget()
-            return w
+            return self.tabs.currentWidget()
         return None
 
     def add_new_tab(self, qurl, title):
         if not qurl.isValid(): qurl = QUrl("https://www.google.com")
             
-        # AV Blacklist check
         if any(bad in qurl.toString() for bad in ["malware", "phishing", "virus"]):
             self.show_av_warning(qurl.toString())
             return
@@ -491,30 +511,35 @@ class NexusBrowser(QMainWindow):
             self.close()
 
     # ==========================================
-    # TÍNH NĂNG ĐÓNG BĂNG TAB (FIX CLOSURE BUG)
+    # TÍNH NĂNG ĐÓNG BĂNG TAB (FIX INDEX ERROR)
     # ==========================================
     def check_hibernation(self):
         current_idx = self.tabs.currentIndex()
+        indices_to_hibernate = []
+        
+        # Thu thập chỉ mục an toàn trước khi can thiệp vào Qt Model
         for i in range(self.tabs.count()):
             if i != current_idx:
                 w = self.tabs.widget(i)
                 if isinstance(w, QWebEngineView):
-                    url = w.url().toString()
-                    title = w.title() or url
+                    indices_to_hibernate.append(i)
                     
-                    self.tabs.removeTab(i)
-                    w.deleteLater() # Giải phóng 100% RAM
-                    
-                    placeholder = QLabel(LANGS[self.current_lang]["hibernated"])
-                    placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    placeholder.setStyleSheet("font-size: 18px; color: #a6adc8; background: #1e1e2e; border-radius: 6px;")
-                    placeholder.setProperty("url", url)
-                    placeholder.setProperty("title", title)
-                    
-                    # Fix lỗi closure scope bằng cách truyền thẳng object vào lambda
-                    placeholder.mousePressEvent = lambda event, lbl=placeholder: self.restore_tab(lbl)
-                    
-                    self.tabs.insertTab(i, placeholder, title[:15])
+        # Duyệt ngược để bảo toàn cấu trúc Index của QTabWidget
+        for i in reversed(indices_to_hibernate):
+            w = self.tabs.widget(i)
+            url = w.url().toString()
+            title = w.title() or url
+            
+            self.tabs.removeTab(i)
+            w.deleteLater() 
+            
+            placeholder = QLabel(LANGS[self.current_lang]["hibernated"])
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder.setStyleSheet("font-size: 18px; color: #a6adc8; background: #1e1e2e; border-radius: 6px;")
+            placeholder.setProperty("url", url)
+            placeholder.setProperty("title", title)
+            
+            self.tabs.insertTab(i, placeholder, title[:15])
 
     def restore_tab(self, placeholder):
         idx = self.tabs.indexOf(placeholder)
@@ -535,21 +560,21 @@ class NexusBrowser(QMainWindow):
         self.inject_extensions(view)
 
     # ==========================================
-    # DOWNLOAD MANAGER (IDM 64 THREADS)
+    # DOWNLOAD MANAGER (FIX C++ OBJECT DELETED)
     # ==========================================
     def handle_download(self, download_item):
-        download_item.cancel() # Chặn trình tải mặc định của Qt
+        # FIX: Trích xuất dữ liệu TRƯỚC khi gọi cancel() để tránh lỗi C++ Object Deleted
         url = download_item.url().toString()
         suggested_name = download_item.suggestedFileName()
         
+        download_item.cancel() # Chặn an toàn sau khi đã lấy dữ liệu
+        
         save_path, _ = QFileDialog.getSaveFileName(self, "Save File", suggested_name)
-        if not save_path:
-            return
+        if not save_path: return
             
         self.download_bar.show()
         self.download_bar.setFixedHeight(80)
         
-        # Xóa widget tải xuống cũ nếu có
         while self.download_layout.count():
             item = self.download_layout.takeAt(0)
             w = item.widget()
@@ -558,7 +583,6 @@ class NexusBrowser(QMainWindow):
         self.idm_widget = IDMProgressWidget(suggested_name, self)
         self.download_layout.addWidget(self.idm_widget)
         
-        # Khởi chạy IDM Engine 64 luồng
         if self.idm_engine and self.idm_engine.isRunning():
             self.idm_engine.stop()
             self.idm_engine.wait()
@@ -604,12 +628,12 @@ class NexusBrowser(QMainWindow):
             else:
                 bms.append({"url": url, "title": title})
                 self.btn_bookmark.setText("★")
-            self.data_mgr.save()
+            self.data_mgr._dirty = True # Đánh dấu lưu
 
     def show_passwords(self):
         msg = QMessageBox(self)
         msg.setWindowTitle("Password Manager")
-        pwd = secrets.choice(string.ascii_letters + string.digits + string.punctuation)
+        pwd = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(16))
         msg.setText(f"Generate Strong Password:\n{pwd}")
         msg.exec()
 
@@ -636,7 +660,7 @@ class NexusBrowser(QMainWindow):
             v.setUrl(QUrl(f"https://translate.google.com/translate?sl=auto&tl=en&u={url}"))
 
     def show_about(self):
-        QMessageBox.about(self, "About Nexus", "Nexus Browser v2.0\nOptimized Core & RAM Hibernation\nIDM 64-Thread Engine Integrated\nBuilt with PyQt6.")
+        QMessageBox.about(self, "About Nexus", "Nexus Browser v3.0 (QA Patched)\nOptimized Core & RAM Hibernation\nIDM 64-Thread Engine (Throttled)\nBuilt with PyQt6.")
 
     def send_ai_request(self):
         text = self.ai_input.text()
