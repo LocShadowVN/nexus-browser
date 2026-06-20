@@ -1,34 +1,45 @@
-# 🌐 Nexus Browser
-### Next-Gen Web Browser | RAM Optimized | AI & IDM Integrated
+# 🌐 Nexus Browser (Rust Edition)
 
-[![License](https://img.shields.io/badge/License-MPL--2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![PyQt6](https://img.shields.io/badge/GUI-PyQt6-orange.svg)](https://www.riverbankcomputing.com/software/pyqt/)
+![License](https://img.shields.io/badge/License-MPL_2.0-brightgreen?style=for-the-badge)
+![Language](https://img.shields.io/badge/Language-Rust-orange?style=for-the-badge&logo=rust)
+![RAM Usage](https://img.shields.io/badge/RAM_Footprint-Ultra__Low-cyan?style=for-the-badge)
 
-> **Nexus Browser** is more than just a browser—it's a fully optimized personal workspace. Built on Chromium (WebEngine) with Fluent Design, it features an integrated AdBlocker, 16-thread IDM engine, Gemini AI Sidebar, and intelligent Tab Hibernation to significantly reduce RAM usage compared to traditional browsers.
-
----
-
-## ✨ Key Features
-
-| Feature | Description |
-| :--- | :--- |
-| ⚡ **RAM Optimization** | *Tab Hibernation* auto-freezes inactive tabs after 10 mins, disables disk cache, and limits JS heap. Saves ~40-50% RAM. |
-| 📥 **IDM Engine** | Multi-threaded downloads (16 threads), resume support, real-time MB/s speed display in status bar. |
-| 🛡️ **Dual AdBlocker** | Blocks ads at both Network Request level and via CSS Injection. Includes tracker, analytics, and pop-up blocking. |
-| 🤖 **Nexus AI Sidebar** | Integrated Google Gemini 2.0 Flash. Chat directly in-browser, persistent history, Vietnamese default support. |
-| 🔑 **Password Manager** | Local password vault, customizable strong password generator, real-time strength meter, secure copy. |
-| 🎨 **Fluent UI + Themes** | Modern rounded interface with instant Dark/Light mode toggle. Multi-language support (English / Vietnamese). |
-| 🔍 **Smart Start Page** | Clean homepage with central search bar and quick shortcuts to popular services. |
-| 🧅 **Proxy / VPN Support** | Built-in toggles for WARP VPN (SOCKS5:40001) and Tor Proxy (SOCKS5:9050). |
-| 🛠️ **DevTools & Find** | F12 native Chromium DevTools, Ctrl+F in-page search, Zoom in/out/reset. |
-| 💾 **PDF Export** | Save current webpage as high-quality PDF with one click. |
+**Nexus Browser** is a next-generation, open-source web browser completely rewritten from Python into **Rust**. Built from the ground up to eradicate resource hogging, ensure absolute memory safety, and achieve sub-millisecond execution speeds, Nexus packs high-end security tools and a hyper-modern Fluent/Cyberpunk interface into a highly streamlined Single-File Architecture (`main.rs`).
 
 ---
 
-## 🚀 Installation & Quick Start
+## ⚡ Core Features
 
-### System Requirements
-- Windows 10/11 (recommended) or Linux/macOS
-- Minimum 4GB RAM
+### 🛠️ Hardware & Memory Optimization
+* **Smart RAM Freezing:** Automatically suspends and flushes memory assets of hidden tabs after 5 minutes of inactivity, bringing dynamic tab resource usage down to near 0.
+* **Rust-Native Safety:** Runs entirely without a Garbage Collector, eliminating memory leaks and freeing allocation bytes immediately back to the OS the moment a task finishes.
 
+### 🛡️ Premium Cyber-Security Suite
+* **Premium Adblocker:** A high-performance content blocking sub-engine hooked directly into the webview request pipeline, dropping malicious trackers and ad domains before the page loads.
+* **Tor & SOCKS5 Proxy Integration:** Toggles complete onion routing (via 127.0.0.1:9050) and encrypted proxies to encapsulate all browser traffic, isolating your digital footprint.
+* **Incognito Mode:** Spawns completely sandboxed, in-memory private sessions that leave zero persistent logs, cache, or cookies behind.
+* **Password Vault:** Secure identity manager equipped with a cryptographically secure, high-entropy randomized strong password generator.
+
+### 🤖 Nexus AI Sidebar
+* **40-Turn Persistent Memory:** A fully asynchronous, non-blocking sidebar assistant running on background workers. Features a strict rolling FIFO mechanism to lock conversation memory at exactly 40 turns without ever stuttering the active UI thread.
+
+### 🚀 64-Thread Turbo Downloader
+* An IDM-style native download accelerator. It reads HTTP `Content-Length`, splits remote files into exactly 64 concurrent chunk segments utilizing `tokio` and `reqwest`, and merges them sequentially with absolute data integrity and real-time speed tracking.
+
+### 🎨 Fluent Localization & Custom Navigation
+* **Dynamic Theme Switcher:** Hot-swappable toggle between **Dark Cyberpunk** (`#0a0a0c`, neon cyan glow, neon pink highlights) and **Light Modern** (`#f5f6f8`, fluent blue, deep slate text matrices).
+* **UI Interface Language (EN/VI):** Seamlessly swap all interface components, menus, and buttons between English and Vietnamese on the fly.
+* **Web Page Translator:** Translate foreign-language web nodes into Vietnamese with a single click.
+* **Smart Search Router:** Displays an aesthetic native Nexus Start Page with real-time browser CPU/RAM diagnostic widgets. Typing a search query into the address bar automatically parses and redirects the tab seamlessly to Google Search.
+* **Developer Mode:** An integrated debugging panel featuring live DOM logs, a compact network request inspector, and an interactive JavaScript execution console.
+
+---
+
+## 🏗️ Project Architecture
+
+To maximize testability, compilation speed, and audit efficiency, the entire codebase utilizes a rigid **Single-File Architecture**:
+
+```text
+├── Cargo.toml        # Crate declarations (tokio, reqwest, webview, etc.)
+└── src
+    └── main.rs       # Single source of truth containing all inline modules & logic
