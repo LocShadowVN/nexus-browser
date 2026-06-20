@@ -6,7 +6,7 @@ First off, thank you for taking the time to contribute! As an open-source projec
 
 ### 🐛 Reporting Bugs
 *   Check the Issues tab to ensure the bug hasn't been reported yet.
-*   Open a new issue with a clear title and a detailed description of your OS environment, PyQt6 version, and reproduction steps.
+*   Open a new issue with a clear title and a detailed description of your OS environment,...
 
 ### 💡 Suggesting Enhancements
 Want to upgrade our 64-thread downloader, optimize the Tab Hibernation timer, or improve the Fluent UI layout? Open an issue tagged with `enhancement`.
@@ -14,7 +14,7 @@ Want to upgrade our 64-thread downloader, optimize the Tab Hibernation timer, or
 ### 🚀 Submitting a Pull Request (PR)
 1. Fork this repository.
 2. Create your feature branch: `git checkout -b feature/AmazingFeature`.
-3. Keep your code inside the single-file structure (`main.py`) or declare clean helper modules if strictly necessary.
+3. Keep your code inside the single-file structure (`main.rs`) or declare clean helper modules if strictly necessary.
 4. Test your code online (Replit/Codespaces) or locally to ensure no GUI rendering deadlock occurs.
 5. Commit your changes: `git commit -m 'Add some AmazingFeature'`.
 6. Push to the branch: `git push origin feature/AmazingFeature`.
