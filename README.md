@@ -1,106 +1,54 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/LICENSE-MPL--2.0-ff007f?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/RUST-ELITE-orange?style=for-the-badge&logo=rust" />
-  <img src="https://img.shields.io/badge/ARCHITECTURE-SINGLE%20FILE-green?style=for-the-badge" />
-</p>
+# 🌐 N E X U S // B R O W S E R 
+### ⚡ Elite Rust Edition — Hardened & Ultra-Lightweight Core
 
-<pre align="center" style="color: #00f0ff; font-weight: bold;">
-███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗
-████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝
-██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗
-██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║
-██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
-╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
-       E L I T E   R U S T   E D I T I O N
-</pre>
-
-<h3 align="center">
-  The Ultra-Optimized, Zero-Bloat, Cyberpunk Web Browser.<br>
-  <i>Engineered strictly for extreme low-spec environments (4GB DDR3 RAM) without sacrificing modern web capabilities.</i>
-</h3>
+![Rust](https://img.shields.io/badge/language-Rust-hf4c5d?style=for-the-badge&logo=rust)
+![License](https://img.shields.io/badge/license-MPL%202.0%20%7C%20Apache%202.0-00ffff?style=for-the-badge)
+![Platform](https://img.shields.io/badge/platform-Windows%20Native-ff007f?style=for-the-badge&logo=windows)
+![Architecture](https://img.shields.io/badge/architecture-Single--File-matrix?style=for-the-badge)
 
 ---
 
-## 🧬 // SYSTEM PHILOSOPHY
-
-Modern browsers are bloated memory hogs. **Nexus** rejects this paradigm. Built entirely in a **single `src/main.rs` file**, Nexus leverages the raw power of Rust, `tao`, and `wry` (WebKit2GTK) to deliver a secure, high-performance browsing experience that compiles down to a microscopic binary and runs flawlessly on legacy hardware.
-
-No crypto wallets. No heavy AI sidebars. No telemetry. Just pure, unadulterated web rendering protected by an elite privacy shield.
+Nexus is a hardened, resource-conscious embedded web browser core engineered entirely within a single-file architecture (`src/main.rs`). It is specifically architected to deliver a secure, secure-core browsing environment for low-end systems, optimizing memory and process overhead for legacy machines running on **4GB RAM** or traditional **HDD storage**.
 
 ---
 
-## ⚡ // CORE FEATURES
+## ⚡ Core Engine & Features
 
-### 🚀 32-Thread Backpressure Turbo Downloader
-Forget standard HTTP downloads. Nexus splits files into 32 concurrent chunks, utilizing strict backpressure and asynchronous disk streaming. 
-* **Zero RAM Spikes:** Chunks are flushed instantly via 4KB micro-buffers.
-* **IDM-Level Speeds:** Saturates network bandwidth without choking the CPU or causing OOM crashes on 4GB systems.
+### 🛡️ Autonomous Shield Matrix
+* **Ad & Tracker Suppression:** Built-in string-matching filtering matrix that instantly intercepts malicious ad networks (`adsystem`, `adnxs`) and analytical telemetry tracking scripts (`segment.io`, `fingerprint`).
+* **Domain Sinkholing:** Hardcoded network sinkhole to capture and neutralize heavy tracking domains (`doubleclick`, `adsense`, `hotjar`) before they consume system bandwidth.
+* **Privacy & Anti-Fingerprinting:** Standardizes browser identity by masking headers, applying explicit `Do Not Track (DNT)` configurations, and disabling WebKit compositing modes to minimize the system’s unique hardware fingerprint.
 
-### 🛡️ Aggressive Domain Sinkholing
-A multi-layered defense system intercepts network requests before they hit the WebKit engine.
-* **Local Blocklists:** Instantly drops Ads, Trackers, and Intrusive Cookies.
-* **Regex Sinkhole:** Hardcoded regex patterns neutralize `doubleclick`, `mixpanel`, and `facebook/tr` at the rust-level pipeline.
+### 🔒 Multi-Protocol Routing & Stealth Mode
+* **Flexible Proxy Gateway:** Native routing support allowing users to easily toggle traffic through a custom global proxy setup.
+* **Tor Network Integration:** Instant single-click SOCKS5h routing (`socks5h://127.0.0.1:9050`) to pass traffic through local Tor instances for anonymous requests.
+* **Cloudflare WARP Support:** Built-in network profiles pre-configured to utilize local WARP endpoints for quick encryption layers.
+* **Stealth Incognito Theme:** An isolated browsing profile that dynamically switches the UI to a dedicated cyber-stealth aesthetic, modifies input placeholders for private querying, and wipes sensitive session traces.
 
-### 🧊 Automated Inactive Tab Freeze (RAM Reclamation)
-Nexus monitors DOM interaction. If a tab sits idle for >60 seconds, the background worker injects an eviction script, wiping the DOM tree and replacing it with a lightweight "FROZEN" placeholder, instantly returning megabytes of RAM to the OS.
-
-### 🕵️ True Incognito Isolation
-Boots WebKit in strict incognito mode. No persistent cache, no local storage, no cookie leakage. When you close Nexus, your digital footprint evaporates.
-
-### 🎨 Neon Cyberpunk GUI
-A hyper-minimalist HTML/CSS/JS shell injected directly into the WebKit context.
-* **Dark Mode:** Deep void black (`#0a0a0c`) with Cyan (`#00f0ff`) and Pink (`#ff007f`) neon accents.
-* **Light Mode:** Fluent design fallback for high-contrast environments.
-* **Live Metrics:** Real-time flashing counters for blocked malicious requests.
+### 🚀 High-Performance Utility Modules
+* **16-Part Segmented Downloader:** A high-speed concurrent file downloader (`dl::turbo`) utilizing asynchronous semaphores to execute parallel byte-range requests, maximizing bandwidth efficiency on low-resource machines.
+* **Embedded AI Interface:** A direct FIFO-bounded chat component linked straight to the Google Gemini API, capable of managing memory rotation within a 40-message context boundary.
+* **Hardened Memory Safety:** Implements automated memory scrubbing on drop. When the application terminates, critical state logs, history records, and API key strings are explicitly cleared and written over in memory to prevent cold-boot memory scraping.
 
 ---
 
-## 🏗️ // ARCHITECTURE OVERVIEW
+## 🛠️ Technological Architecture
 
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Windowing** | `tao` | Cross-platform window creation and event loop. |
-| **Rendering** | `wry` | Lightweight WebKit2GTK bindings. |
-| **Async Core** | `tokio` | Multi-threaded runtime for network & I/O. |
-| **Networking** | `reqwest` (rustls) | TLS-encrypted HTTP client with SOCKS5/Tor proxy support. |
-| **State** | `Arc<RwLock<State>>` | Thread-safe, lock-free global state management. |
+Nexus links lightweight cross-platform system windowing with an embedded rendering engine to maximize responsiveness without the heavy bloat of a full Chromium profile.
+
+* **UI Rendering Context:** `wry` (v0.45) & `tao` (v0.30) for native OS harmonization and low-level IPC event-loop communication.
+* **Asynchronous Runtime:** `tokio` multi-threaded task management, explicitly bound to a fixed worker pool to separate UI operations from I/O execution.
+* **Network Stack:** `reqwest` & `futures-util` handling raw byte-streams and direct TLS client construction.
 
 ---
 
-## 🤖 // AI DEVELOPMENT STACK
+## ⚖️ Dual-License Framework
 
-Nexus Browser was architected through a specialized multi-model AI collaboration pipeline. Each model was assigned a distinct role to ensure maximum code quality, architectural integrity, and validation:
+This project is distributed as open-source software under a dual-licensing model, giving developers full flexibility based on their deployment environment:
 
-| AI Model | Role | Contribution |
-| :--- | :--- | :--- |
-| **Qwen** | **Elite Systems Engineer** | Authored the entire single-file Rust architecture, implemented the 32-thread backpressure downloader, optimized WebKit2GTK memory hooks, and performed aggressive code compression for 4GB DDR3 targets. |
-| **Gemini** | **Systems Architect & Planner** | Designed the initial Brave-inspired feature set, planned the domain sinkholing logic, structured the IPC protocol between Rust and WebKit, and defined the extreme release optimization profile. |
-| **Replit Agent** | **QA & Validation Tester** | Executed real-time compilation checks, validated async deadlock safety in the turbo downloader, tested GUI responsiveness under memory pressure, and verified MPL-2.0 license compliance. |
+* **[Mozilla Public License 2.0 (MPL-2.0)](./LICENSE-MPL)**
+* **[Apache License 2.0 (Apache-2.0)](./LICENSE-APACHE)**
 
-> *"This project represents the convergence of human intent and distributed artificial intelligence, pushing Rust to its absolute limits on constrained hardware."*
+Users and contributors are legally permitted to choose either license to govern their use of this software. For closed-source commercial compositions, the permissive terms of **Apache 2.0** can be selected. For standard core modifications where isolated file-level open-source contributions are preferred, the **MPL 2.0** rules apply.
 
----
-
-## 🎮 // INTERFACE CONTROLS
-
-| Action | Trigger | Description |
-| :--- | :--- | :--- |
-| **Navigate** | `Enter` in URL bar | Routes through Nexus Search or direct HTTP. |
-| **Turbo Download** | `⬇ TURBO` button | Fires the 32-thread backpressure engine on the current URL. |
-| **Dev Console** | `⚙ DEV` button | Slides out the Neon Dev Panel with live network logs. |
-| **Theme Toggle** | `🌓` button | Hot-swaps CSS variables between Cyberpunk Dark and Fluent Light. |
-| **Shield Toggles** | Sidebar Switches | Enable/Disable Ads, Trackers, and Sinkhole routing on the fly. |
-
----
-
-## ⚖️ // LICENSE
-
-This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**. 
-
-You are free to use, modify, and distribute this software. However, any modifications made to the original source files must be made available under the same MPL-2.0 license. See the `LICENSE` file in the repository root for full legal terms.
-
----
-<p align="center">
-  <b>⟁ NEXUS BROWSER ⟁</b><br>
-  <sub>Forged by Qwen • Planned by Gemini • Validated by Replit</sub>
-</p>
+*Full legal documentations are maintained in the accompanying `LICENSE-MPL` and `LICENSE-APACHE` files.*
