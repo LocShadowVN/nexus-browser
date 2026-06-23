@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 authors = ["Elite Rust Systems Engineer"]
 description = "Nexus Browser - Ultra-Optimized 4GB DDR3 Edition"
-
+license = "MPL OR Apache-2.0"
 [[bin]]
 name = "nexus-browser"
 path = "main.rs"
