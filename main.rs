@@ -1,26 +1,34 @@
 // ============================================================================
-// NEXUS BROWSER - ELITE RUST EDITION (HARDENED & OPTIMIZED)
-// Single-file architecture: main.rs
+// NEXUS BROWSER - ELITE RUST EDITION (CLEAN & OPTIMIZED)
+// Single-file architecture: src/main.rs
 // Target: 4GB RAM / HDD low-end systems
-// Wry 0.45 / Tao / Tokio multi-thread
+// Wry 0.45 / Tao 0.30 / Tokio multi-thread
 // ============================================================================
 
 use std::sync::Arc;
 use std::time::Instant;
-use tao::{event::{Event, StartCause}, event_loop::{ControlFlow, EventLoopBuilder}, window::WindowBuilder};
+use tao::{
+    event::{Event, StartCause},
+    event_loop::{ControlFlow, EventLoopBuilder},
+    window::WindowBuilder,
+};
 use wry::WebViewBuilder;
 use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
 pub mod state {
     use super::*;
-    #[derive(Clone, Debug, PartialEq)] pub enum Theme { Dark, Light }
-    #[derive(Clone, Debug, PartialEq)] pub enum Lang { EN, VI }
+    
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Theme { Dark, Light }
+    
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Lang { EN, VI }
     
     #[derive(Clone, Debug, Default)]
     pub struct Cfg {
         pub proxy: bool, pub proxy_url: String, pub tor: bool, pub warp: bool, pub dev: bool,
-        pub ad: bool, pub trk: bool, pub cookie: bool, pub sinkhole: bool, pub incog: bool,
+        pub ad: bool, pub trk: bool, pub sinkhole: bool,
     }
     
     #[derive(Debug)]
@@ -35,9 +43,8 @@ pub mod state {
                 hist: Vec::with_capacity(32),
                 cfg: Cfg { 
                     proxy_url: "socks5h://127.0.0.1:1080".into(), 
-                    ad: true, trk: true, cookie: true, sinkhole: true, 
-                    warp: false, tor: false, incog: false, 
-                    ..Default::default() 
+                    ad: true, trk: true, sinkhole: true, 
+                    warp: false, tor: false, ..Default::default() 
                 },
                 theme: Theme::Dark, lang: Lang::EN, blocked: 0, last_active: Instant::now(),
                 api_key: "NX-ELITE-0000".into(), ai_mem: Vec::with_capacity(40),
@@ -51,7 +58,6 @@ pub mod state {
         }
     }
     
-    // SECURITY: Zero sensitive memory on drop (autonomous hardening)
     impl Drop for State {
         fn drop(&mut self) {
             self.ai_mem.clear(); 
@@ -84,11 +90,10 @@ mod sinkhole {
 
 mod net {
     use super::state::Cfg;
-    // Priority: Tor > WARP > custom proxy > direct
     pub fn client(c: &Cfg) -> reqwest::Client {
         let mut b = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) Nexus/1.0")
-            .cookie_store(!c.cookie && !c.incog) // Enforce isolation if cookie block or incognito is active
+            .cookie_store(false)
             .danger_accept_invalid_certs(false)
             .timeout(std::time::Duration::from_secs(30));
             
@@ -108,8 +113,8 @@ mod dl {
     use std::sync::Arc;
     use tokio::{sync::Semaphore, task, io::{AsyncWriteExt, AsyncSeekExt, SeekFrom}};
     use futures_util::StreamExt;
+    use tokio::sync::RwLock;
 
-    // CONCURRENCY UPGRADE: 16-thread parallel chunks, bounded Semaphore
     pub async fn turbo(url: String, st: Arc<RwLock<State>>) {
         let cfg = { st.read().await.cfg.clone() };
         let c = net::client(&cfg);
@@ -133,15 +138,17 @@ mod dl {
             let e = (s + chunk).saturating_sub(1).min(len.saturating_sub(1));
             if s > e { continue; }
             set.spawn(async move {
-                let _permit = match p.acquire().await { Ok(p) => p, Err(_) => return };
-                let r = match cl.get(&u).header("Range", format!("bytes={}-{}", s, e)).send().await { Ok(r) => r, Err(_) => return };
-                let mut stream = r.bytes_stream();
-                let mut off = s;
-                while let Some(Ok(b)) = stream.next().await {
-                    let mut g = fl.lock().await;
-                    let _ = g.seek(SeekFrom::Start(off)).await;
-                    let _ = g.write_all(&b).await;
-                    off += b.len() as u64;
+                if let Ok(_permit) = p.acquire().await {
+                    if let Ok(r) = cl.get(&u).header("Range", format!("bytes={}-{}", s, e)).send().await {
+                        let mut stream = r.bytes_stream();
+                        let mut off = s;
+                        while let Some(Ok(b)) = stream.next().await {
+                            let mut g = fl.lock().await;
+                            let _ = g.seek(SeekFrom::Start(off)).await;
+                            let _ = g.write_all(&b).await;
+                            off += b.len() as u64;
+                        }
+                    }
                 }
             });
         }
@@ -159,88 +166,152 @@ mod search {
 }
 
 fn html() -> String {
-    r#"<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-:root{--bg:#0a0a0c;--c:#00f0ff;--p:#ff007f;--t:#e0e0e0;--pan:rgba(10,10,12,.95);--in:#111;--bd:#333}
-body.lt{--bg:#f5f6f8;--c:#0078d4;--p:#005a9e;--t:#1a1a1a;--pan:rgba(245,246,248,.95);--in:#fff;--bd:#d1d1d1}
-body{background:var(--bg);color:var(--t);font-family:monospace;margin:0;overflow:hidden}
-#sh{display:flex;flex-direction:column;height:100vh}
-#tb{background:var(--pan);border-bottom:1px solid var(--c);padding:10px;display:flex;gap:10px;align-items:center;z-index:10}
-.b{background:0 0;border:1px solid var(--c);color:var(--c);padding:5px 10px;cursor:pointer;text-transform:uppercase;font-weight:700;font-size:12px}
-.b:hover{background:var(--c);color:var(--bg)}.b.p{border-color:var(--p);color:var(--p)}.b.p:hover{background:var(--p);color:var(--bg)}
-#u{flex:1;background:var(--in);border:1px solid var(--bd);color:var(--t);padding:8px}
-#ca{flex:1;overflow:auto;position:relative;background:var(--bg)}
-#st{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%}
-#st h1{font-size:4rem;text-shadow:0 0 20px var(--c);color:var(--c)}
-#st .s{color:var(--p);text-shadow:0 0 10px var(--p);margin-bottom:40px}
-#ss{width:60%;max-width:600px;padding:15px;font-size:18px;background:color-mix(in srgb,var(--c) 10%,transparent);border:2px solid var(--c);color:var(--t);text-align:center}
-#dp,#ap{position:fixed;top:0;width:350px;height:100vh;background:var(--pan);z-index:99;padding:20px;overflow-y:auto;transition:.3s}
-#dp{right:-350px;border-left:2px solid var(--p)}#dp.o{right:0}
-#ap{left:-350px;border-right:2px solid var(--c)}#ap.o{left:0}
-.le{font-size:12px;margin-bottom:5px}
-#pp{position:fixed;right:0;top:60px;width:240px;background:var(--pan);border-left:2px solid var(--c);border-bottom:2px solid var(--c);border-bottom-left-radius:15px;padding:20px;z-index:9;box-shadow:-5px 5px 20px rgba(0,240,255,.15);display:flex;flex-direction:column;gap:12px}
-.stg{display:flex;justify-content:space-between;align-items:center;font-size:12px;text-transform:uppercase;border-bottom:1px dashed rgba(255,255,255,.1);padding-bottom:6px}
-.sw{position:relative;display:inline-block;width:36px;height:18px}.sw input{opacity:0;width:0;height:0}
-.sl{position:absolute;cursor:pointer;inset:0;background:#333;transition:.3s;border-radius:18px}
-.sl:before{position:absolute;content:"";height:12px;width:12px;left:3px;bottom:3px;background:#fff;transition:.3s;border-radius:50%}
-input:checked+.sl{background:var(--c);box-shadow:0 0 8px var(--c)}input:checked+.sl:before{transform:translateX(18px)}
-#bc{margin-top:10px;padding:12px;background:rgba(255,0,127,.1);border:1px solid var(--p);border-radius:8px;text-align:center}
-#ct{font-size:1.8rem;color:var(--p);font-weight:700;text-shadow:0 0 10px var(--p)}
-.pt{color:var(--c);border-bottom:1px solid var(--c);padding-bottom:5px;margin:0;font-size:14px}
-#ah{padding:10px;border-bottom:1px solid var(--c);color:var(--c);font-weight:700;display:flex;justify-content:space-between}
-#al{flex:1;padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
-.msg{padding:8px;border-radius:6px;font-size:12px;max-width:85%;word-wrap:break-word}
-.usr{background:rgba(0,240,255,.1);border:1px solid var(--c);align-self:flex-end;color:var(--c)}
-.ai{background:rgba(255,0,127,.1);border:1px solid var(--p);align-self:flex-start;color:var(--p)}
-#af{padding:10px;border-top:1px solid var(--bd);display:flex;gap:8px}
-#ai{flex:1;background:var(--in);border:1px solid var(--bd);color:var(--t);padding:8px;outline:none}
-</style></head><body>
-<div id="sh"><div id="tb">
-<button class="b" onclick="sr('back')">⟵</button><button class="b" onclick="sr('fwd')">⟶</button><button class="b" onclick="sr('ref')">⟳</button>
-<input type="text" id="u" placeholder="Search..." onkeydown="if(event.key==='Enter')sr('nav',this.value)">
-<button class="b p" onclick="sr('dl',v('u'))">⬇ TURBO</button>
-<button class="b" onclick="tai()">🧠 AI</button>
-<button class="b" onclick="td()">⚙ DEV</button>
-<button class="b" onclick="sr('theme')">🌓</button>
-<button class="b" onclick="sr('lang')">🌐</button>
-</div><div id="ca"><div id="st"><h1 data-i18n="title">NEXUS</h1><div class="s" data-i18n="sub">ELITE RUST // SECURE CORE</div><input type="text" id="ss" placeholder="Query..." onkeydown="if(event.key==='Enter'){v('u',this.value);sr('nav',this.value)}"></div></div></div>
-<div id="ap"><div id="ah"><span>🧠 NEXUS AI</span><span style="cursor:pointer" onclick="tai()">✕</span></div><div id="al"><div class="msg ai">Secure memory initialized.</div></div><div id="af"><input type="text" id="ai" placeholder="Ask..." onkeydown="if(event.key==='Enter')sai()"><button class="b" onclick="sai()">SEND</button></div></div>
-<div id="pp"><h3 class="pt">🛡 SHIELD MATRIX</h3>
-<div class="stg"><label>Ads</label><label class="sw"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>Trackers</label><label class="sw"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>Cookies</label><label class="sw"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>Sinkhole</label><label class="sw"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>WARP VPN</label><label class="sw"><input type="checkbox" onchange="ts('warp',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>Tor Net</label><label class="sw"><input type="checkbox" onchange="ts('tor',this.checked)"><span class="sl"></span></label></div>
-<div class="stg"><label>Incognito</label><label class="sw"><input type="checkbox" onchange="ts('incog',this.checked)"><span class="sl"></span></label></div>
-<div id="bc"><div style="font-size:11px;opacity:.8">THREATS BLOCKED</div><span id="ct">0</span></div></div>
-<div id="dp"><h2 style="color:var(--p);border-bottom:1px solid var(--p)">DEV CONSOLE</h2><div id="dl"></div></div>
+    r###"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { 
+  font-family: 'Courier New', monospace; 
+  background: #0a0a0c; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; 
+  overflow: hidden;
+}
+#app { display: flex; flex-direction: column; height: 100vh; }
+header { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f0f11; border-bottom: 1px solid #00f0ff; }
+.btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid #00f0ff; background: transparent; color: #00f0ff; cursor: pointer; font-weight: bold; }
+.btn:hover { background: #00f0ff; color: #0a0a0c; }
+#url { flex: 1; background: #111; border: 1px solid #333; color: #00f0ff; padding: 8px 12px; outline: none; }
+#url:focus { border-color: #00f0ff; box-shadow: 0 0 5px #00f0ff; }
+#workspace { display: flex; flex: 1; overflow: hidden; }
+main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+.logo { font-size: 4rem; color: #00f0ff; text-shadow: 0 0 20px #00f0ff; margin-bottom: 10px; }
+.sub { color: #ff007f; text-shadow: 0 0 10px #ff007f; margin-bottom: 40px; }
+#search { width: 60%; max-width: 600px; padding: 15px; font-size: 18px; background: color-mix(in srgb, #00f0ff 10%, transparent); border: 2px solid #00f0ff; color: #fff; text-align: center; }
+aside { width: 320px; background: #0f0f11; border-left: 1px solid #00f0ff; display: flex; flex-direction: column; overflow: hidden; }
+.side-hd { padding: 15px; border-bottom: 1px solid #00f0ff; color: #00f0ff; font-weight: bold; }
+.side-scroll { flex: 1; overflow-y: auto; padding: 15px; }
+.sec-title { margin: 15px 0 10px; color: #ff007f; font-size: 0.9rem; }
+.row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.sw { position: relative; width: 40px; height: 20px; }
+.sw input { opacity: 0; width: 0; height: 0; }
+.sl { position: absolute; cursor: pointer; inset: 0; background: #333; transition: .3s; border-radius: 20px; }
+.sl:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; transition: .3s; border-radius: 50%; }
+input:checked + .sl { background: #00f0ff; }
+input:checked + .sl:before { transform: translateX(20px); }
+#tc { font-size: 2rem; color: #ff007f; font-weight: bold; text-shadow: 0 0 10px #ff007f; }
+#dp { position: fixed; right: -400px; top: 0; width: 400px; height: 100vh; background: #0f0f11; border-left: 2px solid #ff007f; z-index: 99; padding: 20px; overflow-y: auto; transition: right 0.3s; }
+#dp.o { right: 0; }
+.le { font-size: 12px; margin-bottom: 5px; }
+.le.error { color: #ff007f; }
+.le.info { color: #00f0ff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="btn" onclick="sr('back')">⟵</button>
+    <button class="btn" onclick="sr('fwd')">⟶</button>
+    <button class="btn" onclick="sr('ref')">⟳</button>
+    <input type="text" id="url" placeholder="Search Nexus or enter URL..." onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="btn" onclick="sr('dl',v('url'))">⬇ TURBO</button>
+    <button class="btn" onclick="toggleDevTools()">⚙ DEV</button>
+    <button class="btn" onclick="sr('about')">ⓘ ABOUT</button>
+    <button class="btn" onclick="sr('theme')">🌓</button>
+    <button class="btn" onclick="sr('lang')">🌐</button>
+  </header>
+  
+  <div id="workspace">
+    <main>
+      <div id="nexus-start">
+        <h1 class="logo">NEXUS</h1>
+        <div class="sub">ELITE RUST // AI INTEGRATED</div>
+        <input type="text" id="search" placeholder="Initiate Query Sequence..." onkeydown="if(event.key==='Enter') { document.getElementById('url').value = this.value; sr('nav', this.value); }">
+      </div>
+    </main>
+  </div>
+
+  <aside>
+    <div class="side-hd">🛡 PRIVACY SHIELD</div>
+    <div class="side-scroll">
+      <div class="sec-title">Protection Toggles</div>
+      <div class="row">
+        <label>Ad Blocker</label>
+        <label class="sw"><input type="checkbox" id="toggle-adblock" checked onchange="toggleShield('adblock', this.checked)"><span class="sl"></span></label>
+      </div>
+      <div class="row">
+        <label>Tracker Block</label>
+        <label class="sw"><input type="checkbox" id="toggle-tracker" checked onchange="toggleShield('tracker', this.checked)"><span class="sl"></span></label>
+      </div>
+      <div class="row">
+        <label>Sinkhole</label>
+        <label class="sw"><input type="checkbox" id="toggle-sink" checked onchange="toggleShield('sink', this.checked)"><span class="sl"></span></label>
+      </div>
+      
+      <div class="sec-title">Statistics</div>
+      <div id="tc">0</div>
+    </div>
+  </aside>
+</div>
+
+<div id="dp">
+  <h2 style="color: #ff007f; border-bottom: 1px solid #ff007f;">NEXUS DEV CONSOLE</h2>
+  <div id="dl"></div>
+</div>
+
 <script>
-window.S={ad:1,trk:1,cookie:1,sink:1,warp:0,tor:0,incog:0};
-function ib(u){if(!u)return 0;try{if(S.sink&&/doubleclick|adsense|mixpanel|hotjar|facebook\.com\/tr|google-analytics/.test(u))return 1;if(S.ad&&/adsystem|adnxs|taboola|cookie-law/.test(u))return 1;if(S.trk&&/analytics|segment\.io|telemetry|fingerprint|trackcmp/.test(u))return 1}catch(e){}return 0}
-const of=window.fetch;window.fetch=function(i,n){let u='';try{u=typeof i==='string'?i:i.url}catch(e){}if(ib(u)){sr('inc');return Promise.reject(new Error('Blocked'))}return of.apply(this,arguments)};
-function ts(t,v){S[t]=v?1:0;sr('shld',{s:t,v:v})}
-function uc(c){let e=document.getElementById('ct');if(e){e.textContent=c;let p=document.getElementById('bc');p.style.boxShadow='0 0 25px var(--p)';setTimeout(()=>p.style.boxShadow='none',500)}}
-function sr(a,p){if(window.chrome&&window.chrome.webview)window.chrome.webview.postMessage(JSON.stringify({a,p}));else if(window.ipc)window.ipc.postMessage(JSON.stringify({a,p}))}
-function td(){document.getElementById('dp').classList.toggle('o')}
-function tai(){document.getElementById('ap').classList.toggle('o')}
-function lg(m,t){let l=document.getElementById('dl'),e=document.createElement('div');e.className='le '+(t||'info');e.style.color=t==='error'?'var(--p)':'var(--c)';e.textContent='['+new Date().toTimeString().split(' ')[0]+'] '+m;l.prepend(e)}
-window.rp=function(h){
-  document.getElementById('ca').innerHTML=h;
-  try{localStorage.clear();sessionStorage.clear()}catch(e){}
-  try{
-    Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
-    const _toDataURL=HTMLCanvasElement.prototype.toDataURL;
-    HTMLCanvasElement.prototype.toDataURL=function(t){if(t==='image/png'&&this.width<16){return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='}return _toDataURL.apply(this,arguments)};
-    if(navigator.mediaDevices)navigator.mediaDevices.enumerateDevices=async()=>[];
-  }catch(e){}
-};
-window.at=function(m){m==='light'?document.body.classList.add('lt'):document.body.classList.remove('lt')}
-window.al=function(l){document.querySelectorAll('[data-i18n]').forEach(e=>{let k=e.getAttribute('data-i18n');if(L[l]&&L[l][k])e.textContent=L[l][k]})};
-const L={en:{title:"NEXUS",sub:"ELITE RUST // SECURE CORE"},vi:{title:"NEXUS",sub:"RUST CAO CẤP // LÕI BẢO MẬT"}};
-function v(id,val){let e=document.getElementById(id);if(val!==undefined)e.value=val;return e?e.value:''}
-function sai(){let i=document.getElementById('ai');let m=i.value.trim();if(!m)return;i.value='';let l=document.getElementById('al');l.innerHTML+='<div class="msg usr"><b>You:</b> '+m+'</div>';l.scrollTop=l.scrollHeight;sr('ai',m)}
-function cai(r){let l=document.getElementById('al');l.innerHTML+='<div class="msg ai"><b>AI:</b> '+r+'</div>';l.scrollTop=l.scrollHeight}
-</script></body></html>"#.into()
+window.currentLang = 'en';
+window.applyTheme = function(mode) {
+    if(mode === 'light') {
+        document.body.style.background = '#f5f6f8';
+        document.body.style.color = '#1a1a1a';
+    } else {
+        document.body.style.background = '#0a0a0c';
+        document.body.style.color = '#e0e0e0';
+    }
+}
+window.applyLanguage = function(lang) {
+    window.currentLang = lang;
+    if(lang === 'vi') {
+        document.getElementById('url').placeholder = 'Tìm kiếm hoặc nhập URL...';
+        document.getElementById('search').placeholder = 'Khởi tạo truy vấn...';
+    } else {
+        document.getElementById('url').placeholder = 'Search Nexus or enter URL...';
+        document.getElementById('search').placeholder = 'Initiate Query Sequence...';
+    }
+}
+function toggleDevTools() {
+    document.getElementById('dp').classList.toggle('o');
+    sr('toggle_dev');
+}
+function toggleShield(type, val) {
+    sr('toggle_shield', { shield: type, value: val });
+}
+function updateBlockCount(count) {
+    document.getElementById('tc').textContent = 'Blocked: ' + count;
+}
+function sr(action, payload) {
+    sendToRust(action, payload || "");
+}
+function sendToRust(action, payload) {
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(JSON.stringify({action, payload}));
+    } else if (window.ipc) {
+        window.ipc.postMessage(JSON.stringify({action, payload}));
+    }
+}
+function logToDev(msg, type) {
+    let logs = document.getElementById('dl');
+    let entry = document.createElement('div');
+    entry.className = 'le ' + (type || 'info');
+    entry.textContent = '[' + new Date().toISOString().split('T')[1].split('.')[0] + '] ' + msg;
+    logs.prepend(entry);
+}
+function v(id) { return document.getElementById(id).value; }
+</script>
+</body>
+</html>"###.into()
 }
 
 #[derive(Debug, Clone)]
@@ -248,15 +319,15 @@ enum Ev { Js(String) }
 
 async fn fetch(url: String, st: Arc<RwLock<state::State>>, px: tao::event_loop::EventLoopProxy<Ev>) {
     let cfg = { st.read().await.cfg.clone() };
-    if blocker::check(&url, &cfg) || (cfg.sinkhole && sinkhole::check(&url)) { 
-        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE: {}','error')", url.replace('\'', "")))); 
+    if blocker::check(&url, &cfg) || (cfg.sinkhole && sinkhole::check(&url)) {
+        let _ = px.send_event(Ev::Js(format!("logToDev('BLOCKED: {}','error');", url.replace('\'', "").replace('"', ""))));
         let blocked = {
             let mut g = st.write().await;
             g.blocked += 1;
             g.blocked
         };
-        let _ = px.send_event(Ev::Js(format!("uc({})", blocked)));
-        return; 
+        let _ = px.send_event(Ev::Js(format!("updateBlockCount({});", blocked)));
+        return;
     }
 
     let client = net::client(&cfg);
@@ -277,9 +348,9 @@ async fn fetch(url: String, st: Arc<RwLock<state::State>>, px: tao::event_loop::
                 format!("{}{}", inj, h)
             };
             if let Ok(esc) = serde_json::to_string(&html_out) {
-                let _ = px.send_event(Ev::Js(format!("rp({})", esc)));
-                let mut g = st.write().await; 
-                g.hist.push(url); 
+                let _ = px.send_event(Ev::Js(format!("document.getElementById('workspace').innerHTML = '<main>' + `{}` + '</main>'; try{{localStorage.clear();sessionStorage.clear();}}catch(e){{}}", esc.replace("<main>", "").replace("</main>", ""))));
+                let mut g = st.write().await;
+                g.hist.push(url);
                 if g.hist.len() > 100 { g.hist.remove(0); }
                 g.last_active = Instant::now();
             }
@@ -305,10 +376,9 @@ fn main() {
     let st = Arc::new(RwLock::new(state::State::new()));
     let px = el.create_proxy();
 
-    let tokio_rt = Arc::new(Builder::new_multi_thread().enable_all().worker_threads(4).build().expect("tokio rt"));
+    let tokio_rt = Arc::new(Builder::new_multi_thread().enable_all().worker_threads(4).build().unwrap_or_else(|_| std::process::exit(1)));
     let tokio_handle = tokio_rt.handle().clone();
 
-    // Idle watcher
     {
         let stc = st.clone();
         let pxc = px.clone();
@@ -317,7 +387,7 @@ fn main() {
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 let idle = { stc.read().await.last_active.elapsed().as_secs() > 300 };
                 if idle {
-                    let _ = pxc.send_event(Ev::Js("lg('Idle: memory compaction triggered','info')".into()));
+                    let _ = pxc.send_event(Ev::Js("logToDev('Idle: memory compaction triggered','info');".into()));
                 }
             }
         });
@@ -327,7 +397,6 @@ fn main() {
     let ipx = px.clone();
     let rth = tokio_handle.clone();
  
-    // SECURITY: Native incognito + bounded WebView
     let mut wb = WebViewBuilder::new();
     wb = wb.with_html(html())
         .with_back_forward_navigation_gestures(false)
@@ -335,8 +404,8 @@ fn main() {
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             let msg = req.into_body();
             let p: serde_json::Value = match serde_json::from_str(&msg) { Ok(v) => v, Err(_) => return };
-            let a = p["a"].as_str().unwrap_or("");
-            let d = p["p"].clone();
+            let a = p["action"].as_str().unwrap_or(p["a"].as_str().unwrap_or(""));
+            let d = p["payload"].clone().or_else(|| p["p"].clone()).unwrap_or_default();
             let ist = ist.clone();
             let ipx = ipx.clone();
             let rth = rth.clone();
@@ -350,13 +419,13 @@ fn main() {
                     let u = u.to_string();
                     rth.spawn(async move { dl::turbo(u, ist).await; });
                 },
-                "dev" => { rth.spawn(async move { let mut g = ist.write().await; g.cfg.dev = !g.cfg.dev; }); },
+                "dev" | "toggle_dev" => { rth.spawn(async move { let mut g = ist.write().await; g.cfg.dev = !g.cfg.dev; }); },
                 "theme" => {
                     rth.spawn(async move {
                         let mut g = ist.write().await;
                         g.theme = if g.theme == state::Theme::Dark { state::Theme::Light } else { state::Theme::Dark };
                         let t = if g.theme == state::Theme::Dark { "dark" } else { "light" };
-                        let _ = ipx.send_event(Ev::Js(format!("at('{}')", t)));
+                        let _ = ipx.send_event(Ev::Js(format!("applyTheme('{}');", t)));
                     });
                 },
                 "lang" => {
@@ -364,56 +433,57 @@ fn main() {
                         let mut g = ist.write().await;
                         g.lang = if g.lang == state::Lang::EN { state::Lang::VI } else { state::Lang::EN };
                         let l = if g.lang == state::Lang::EN { "en" } else { "vi" };
-                        let _ = ipx.send_event(Ev::Js(format!("al('{}')", l)));
+                        let _ = ipx.send_event(Ev::Js(format!("applyLanguage('{}');", l)));
                     });
                 },
-                "shld" => {
-                    if let (Some(s), Some(v)) = (d["s"].as_str().map(String::from), d["v"].as_bool()) {
+                "shld" | "toggle_shield" => {
+                    if let (Some(s), Some(v)) = (d["shield"].as_str().or_else(|| d["s"].as_str()).map(String::from), d["value"].as_bool().or_else(|| d["v"].as_bool())) {
                         rth.spawn(async move {
                             let mut g = ist.write().await;
                             match s.as_str() {
-                                "ad" => g.cfg.ad = v,
-                                "trk" => g.cfg.trk = v,
-                                "cookie" => g.cfg.cookie = v,
-                                "sink" => g.cfg.sinkhole = v,
-                                "warp" => g.cfg.warp = v,
-                                "tor" => g.cfg.tor = v,
-                                "incog" => g.cfg.incog = v,
+                                "adblock" | "ad" => g.cfg.ad = v,
+                                "tracker" | "trk" => g.cfg.trk = v,
+                                "sink" | "sinkhole" => g.cfg.sinkhole = v,
                                 _ => {}
                             }
                         });
                     }
                 },
-                "inc" => {
+                "inc" | "blocker_increment" => {
                     rth.spawn(async move {
                         let mut g = ist.write().await;
                         g.blocked += 1;
                         let c = g.blocked;
                         drop(g);
-                        let _ = ipx.send_event(Ev::Js(format!("uc({})", c)));
+                        let _ = ipx.send_event(Ev::Js(format!("updateBlockCount({});", c)));
                     });
                 },
-                "ai" => if let Some(prompt) = d.as_str() {
+                "ai" | "translate_text" => if let Some(prompt) = d.as_str() {
                     let p_str = prompt.to_string();
+                    let ist_c = ist.clone(); let ipx_c = ipx.clone();
                     rth.spawn(async move {
                         {
-                            let mut g = ist.write().await;
+                            let mut g = ist_c.write().await;
                             g.push_ai("user".into(), p_str.clone());
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                         let (mem_size, api_prefix) = {
-                            let g = ist.read().await;
+                            let g = ist_c.read().await;
                             (g.ai_mem.len(), g.api_key.chars().take(8).collect::<String>())
                         };
                         let reply = format!("API[{}] | FIFO mem: {} turns | Query: '{}'", api_prefix, mem_size, p_str);
                         {
-                            let mut g = ist.write().await;
+                            let mut g = ist_c.write().await;
                             g.push_ai("ai".into(), reply.clone());
                         }
                         if let Ok(esc) = serde_json::to_string(&reply) {
-                            let _ = ipx.send_event(Ev::Js(format!("cai({})", esc)));
+                            let _ = ipx_c.send_event(Ev::Js(format!("logToDev('AI: {}','info');", esc.replace('\"', ""))));
                         }
                     });
+                },
+                "about" => {
+                    let about_html = r#"<div style='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0a0a0c;border:2px solid #00f0ff;padding:40px;z-index:99999;box-shadow:0 0 30px #00f0ff;color:#fff;font-family:monospace;'><h1 style='color:#00f0ff;'>NEXUS BROWSER</h1><p style='color:#ff007f;'>Elite Rust Edition</p><p>Developed for extreme memory safety and zero resource hogging.</p><button class='btn' onclick='this.parentNode.remove();'>CLOSE</button></div>"#;
+                    let _ = ipx.send_event(Ev::Js(format!("document.body.insertAdjacentHTML('beforeend', `{}`);", about_html)));
                 },
                 _ => {}
             }
@@ -421,14 +491,13 @@ fn main() {
 
     let wv = match wb.build(&w) { Ok(w) => w, Err(_) => return };
 
-    // Keep runtime alive for the lifetime of the event loop
     let _rt_guard = tokio_rt.clone();
 
     el.run(move |ev, _, cf| {
         *cf = ControlFlow::Wait;
         match ev {
             Event::NewEvents(StartCause::Init) => {
-                let _ = px.send_event(Ev::Js("lg('NEXUS CORE INITIALIZED','info');lg('Incognito envelope active','info');lg('Anti-fingerprint matrix loaded','info')".into()));
+                let _ = px.send_event(Ev::Js("logToDev('NEXUS CORE INITIALIZED','info');logToDev('Incognito envelope active','info');logToDev('Anti-fingerprint matrix loaded','info');".into()));
             },
             Event::UserEvent(Ev::Js(j)) => { let _ = wv.evaluate_script(&j); },
             Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => *cf = ControlFlow::Exit,
