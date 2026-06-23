@@ -1,0 +1,9 @@
+# Ignore environment variables (SECRETS)
+.env
+
+# Ignore compiled binaries
+target/
+*.bin
+
+# Ignore lockfile (optional, but good for single-file clean repos)
+Cargo.lock
