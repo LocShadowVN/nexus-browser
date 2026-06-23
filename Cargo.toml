@@ -2,23 +2,17 @@
 name = "nexus-browser"
 version = "1.0.0"
 edition = "2021"
-authors = ["Elite Rust Systems Engineer"]
-description = "Nexus Browser - Ultra-Optimized 4GB DDR3 Edition"
-license = "MPL OR Apache-2.0"
-[[bin]]
-name = "nexus-browser"
-path = "main.rs"
-
+license = "MPL or Apache 2.0"
 [dependencies]
 tao = "0.30"
 wry = "0.45"
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "fs", "sync", "time", "io-util"] }
+tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "socks", "json", "stream"] }
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
-serde = { version = "1", default-features = false, features = ["derive", "std"] }
-serde_json = { version = "1", default-features = false, features = ["std"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 url = "2"
-rand = { version = "0.8", default-features = true }
+dotenvy = "0.15"
 
 [profile.release]
 opt-level = "z"
@@ -26,5 +20,3 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
-debug = false
-incremental = false
