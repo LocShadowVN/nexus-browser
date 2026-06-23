@@ -1,6 +1,6 @@
 # Contributing to Nexus Browser
 
-First off, thank you for taking the time to contribute! As an open-source project licensed under **MPL 2.0**, community contributions are what keep Nexus fast and secure.
+First off, thank you for taking the time to contribute! As an open-source project licensed under **MPL 2.0** and **Apache 2.0**, community contributions are what keep Nexus fast and secure.
 
 ## How Can I Contribute?
 
@@ -9,7 +9,7 @@ First off, thank you for taking the time to contribute! As an open-source projec
 *   Open a new issue with a clear title and a detailed description of your OS environment,...
 
 ### 💡 Suggesting Enhancements
-Want to upgrade our 64-thread downloader, optimize the Tab Hibernation timer, or improve the Fluent UI layout? Open an issue tagged with `enhancement`.
+Want to upgrade our 16-thread downloader, optimize the Tab Hibernation timer, or improve the Fluent UI layout? Open an issue tagged with `enhancement`.
 
 ### 🚀 Submitting a Pull Request (PR)
 1. Fork this repository.
@@ -20,4 +20,4 @@ Want to upgrade our 64-thread downloader, optimize the Tab Hibernation timer, or
 6. Push to the branch: `git push origin feature/AmazingFeature`.
 7. Open a Pull Request.
 
-*Reminder: Under the MPL 2.0 License, any modifications you make to the Nexus core files must also be made open-source under the same license terms.*
+*Reminder: Under the MPL and Apache 2.0 License, any modifications you make to the Nexus core files must also be made open-source under the same license terms.*
