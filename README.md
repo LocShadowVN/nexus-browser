@@ -8,7 +8,7 @@
 
 ---
 
-Nexus is a hardened, resource-conscious embedded web browser core engineered entirely within a single-file architecture (`src/main.rs`). It is specifically architected to deliver a secure, secure-core browsing environment for low-end systems, optimizing memory and process overhead for legacy machines running on **4GB RAM** or traditional **HDD storage**.
+Nexus is a hardened, resource-conscious embedded web browser core engineered entirely within a single-file architecture (`main.rs`). It is specifically architected to deliver a secure, secure-core browsing environment for low-end systems, optimizing memory and process overhead for legacy machines running on **4GB RAM** or traditional **HDD storage**.
 
 ---
 
