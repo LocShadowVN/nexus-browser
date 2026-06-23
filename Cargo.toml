@@ -3,6 +3,7 @@ name = "nexus-browser"
 version = "1.0.0"
 edition = "2021"
 license = "MPL or Apache 2.0"
+
 [dependencies]
 tao = "0.30"
 wry = "0.45"
