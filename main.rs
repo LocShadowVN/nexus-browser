@@ -37,6 +37,14 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use rand::RngCore;
 use url::Url;
 
+// FIXED: macro moved to top of file so it is in textual scope
+// for every module that uses it (was previously defined at the
+// bottom of the file, causing "cannot find macro `json`" errors).
+#[macro_export]
+macro_rules! json {
+    ($($tt:tt)*) => { serde_json::json!($($tt)*) };
+}
+
 #[derive(Debug, Clone)]
 enum Ev {
     Js(String),
@@ -303,7 +311,7 @@ mod injection {
         let (mut css, mut js) = (String::new(), String::new());
         
         if cfg.ad { css.push_str(r#"[class*="ad-"],[id*="ad-"],.adsbygoogle,#google_ads,iframe[src*="doubleclick"],[class*="sponsor"],[id*="banner"],.ad-container,.adsbox{display:none!important;height:0!important;width:0!important;overflow:hidden!important}"#); }
-        if cfg.trk { js.push_str(r#"!function(){const t=['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'],n=t=>t.some(t=>(""+t).includes(t)),o=()=>{try{window.top&&window.top.nexusBlocked&&window.top.nexusBlocked()}catch(t){}},e=window.fetch;window.fetch=function(t,r){return n(t)?(o(),Promise.reject("Blocked")):e.apply(this,arguments)};const i=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(t,n){return n(t)?(o(),void throw new Error("Blocked")):i.apply(this,arguments)},navigator.sendBeacon=()=>!1}()"#); }
+        if cfg.trk { js.push_str(r#"!function(){const t=['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'],n=t=>t.some(t=>(""+t).includes(t)),o=()=>{try{window.top&&window.top.nexusBlocked&&window.top.nexusBlocked()}catch(t){}},e=window.fetch;window.fetch=function(t,r){return n(t)?(o(),Promise.reject("Blocked")):e.apply(this,arguments)};const i=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(t,n){return n(t)?(o(),undefined):i.apply(this,arguments)},navigator.sendBeacon=()=>!1}()"#); }
         if cfg.cookie { js.push_str(r#"!function(){const t=Object.getOwnPropertyDescriptor(Document.prototype,"cookie");t&&(Object.defineProperty(document,"cookie",{set(n){/(_ga|track|fbp)/.test(n)||t.set.call(this,n)},get(){return t.get.call(this)}}))}()"#); }
         if cfg.anti_fp { js.push_str(r#"!function(){HTMLCanvasElement.prototype.toDataURL=()=>"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";const t=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(n){return 37445===n?"Nexus":37446===n?"Nexus":t.apply(this,arguments)},Object.defineProperty(navigator,"hardwareConcurrency",{get:()=>4}),Object.defineProperty(navigator,"deviceMemory",{get:()=>4})}()"#); }
         
@@ -384,11 +392,18 @@ mod vault {
         })?
     }
     
+    // FIXED: previous implementation used `.cycle().take(len)`, which
+    // just repeats the charset in a fixed, predictable order (e.g.
+    // "ABCDEFGH...") instead of generating a random password.
     pub fn generate(len: usize) -> String {
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*"
-            .chars()
-            .cycle()
-            .take(len)
+        const CHARSET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+        let mut rng = rand::thread_rng();
+        (0..len)
+            .map(|_| {
+                let idx = (rng.next_u32() as usize) % CHARSET.len();
+                CHARSET[idx] as char
+            })
             .collect()
     }
     
@@ -704,7 +719,10 @@ mod extensions {
                         url_matches_pattern(url, pattern)
                     )
                 )
-                .flat_map(|cs| cs.css.as_ref().map(|css| css.iter()).unwrap_or_else(|| [].iter()))
+                // FIXED: `[].iter()` borrowed a temporary array that was
+                // dropped at the end of the closure (E0716). Use a
+                // 'static empty slice instead.
+                .flat_map(|cs| cs.css.as_deref().unwrap_or(&[]).iter())
                 .collect::<Vec<_>>();
                 
             if css_files.is_empty() { return None; }
@@ -740,11 +758,14 @@ mod extensions {
                 None => None,
             };
             
-            bg_script.and_then(|path| {
-                tokio::runtime::Handle::current().block_on(async {
-                    fs::read_to_string(&path).await.ok()
-                })
-            })
+            // FIXED: this function is already `async`, so calling
+            // Handle::current().block_on(...) here would panic at
+            // runtime ("Cannot start a runtime from within a runtime").
+            // Just await directly instead.
+            match bg_script {
+                Some(path) => fs::read_to_string(&path).await.ok(),
+                None => None,
+            }
         }
     }
     
@@ -1237,8 +1258,11 @@ function toggleExtension(id, enabled) {
 
 document.addEventListener('DOMContentLoaded',function() {
   initTabs();
-  extensions::api::setup_extension_apis();
-  
+  // FIXED: `extensions::api::setup_extension_apis()` is a Rust
+  // function, not JS — it is invalid JS syntax here and was never
+  // actually invoked. It is now called from Rust in main() right
+  // after the WebView is built (it injects the `chrome` polyfill).
+
   // Yêu cầu danh sách extensions
   sr('ext-list', '');
 });
@@ -1397,6 +1421,10 @@ fn main() {
         .unwrap();
     
     let handle = rt.handle().clone();
+    // FIXED: `handle` is moved into the `with_ipc_handler` closure below
+    // (it's a `move` closure), so it would no longer be usable afterwards
+    // in the winit event loop. Keep a separate clone for that.
+    let handle_for_loop = handle.clone();
     let (ist, ipx) = (st.clone(), px.clone());
     
     let wb = WebViewBuilder::new(w)
@@ -1697,6 +1725,10 @@ fn main() {
     
     let wv = wb.build().unwrap();
     
+    // FIXED: actually call setup_extension_apis (previously only an
+    // invalid, dead JS call existed for this).
+    extensions::api::setup_extension_apis(&wv);
+    
     // Tự động phát hiện WARP/Tor và cập nhật UI
     autoconfig::update_ui(&px);
     
@@ -1737,7 +1769,11 @@ fn main() {
             Event::UserEvent(Ev::NewTab(idx)) | Event::UserEvent(Ev::CloseTab(idx)) => {
                 update_tabs(&st.blocking_read(), &px);
                 if let Event::UserEvent(Ev::NewTab(_)) = ev {
-                    tokio::spawn({
+                    // FIXED: this closure runs on the winit event-loop
+                    // thread, which is not inside the Tokio runtime, so
+                    // bare `tokio::spawn` would panic ("there is no
+                    // reactor running"). Use the captured Handle instead.
+                    handle_for_loop.spawn({
                         let (st, px) = (st.clone(), px.clone());
                         async move { load_url("nexus://home".into(), st, &px, false).await; }
                     });
@@ -1751,8 +1787,5 @@ fn main() {
 
 // ======================
 // HELPERS
+// (json! macro now defined at top of file)
 // ======================
-#[macro_export]
-macro_rules! json {
-    ($($tt:tt)*) => { serde_json::json!($($tt)*) };
-}
