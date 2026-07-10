@@ -18,6 +18,7 @@ use tokio::{
     runtime::Builder,
     sync::{RwLock, Semaphore, Mutex as TokioMutex},
     task::JoinSet,
+    io::{AsyncSeekExt, AsyncWriteExt},
 };
 use uuid::Uuid;
 use wry::webview::WebViewBuilder;
@@ -37,9 +38,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use rand::RngCore;
 use url::Url;
 
-// FIXED: macro moved to top of file so it is in textual scope
-// for every module that uses it (was previously defined at the
-// bottom of the file, causing "cannot find macro `json`" errors).
 #[macro_export]
 macro_rules! json {
     ($($tt:tt)*) => { serde_json::json!($($tt)*) };
@@ -82,6 +80,9 @@ mod state {
     
     #[derive(Clone, Debug, Default)]
     pub struct SyncConfig { pub chrome: bool, pub firefox: bool, pub edge: bool }
+    
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    pub struct Bookmark { pub title: String, pub url: String }
     
     #[derive(Debug)]
     pub struct TabState {
@@ -169,7 +170,7 @@ mod state {
             self.cfg.proxy_url.hash(&mut h);
             self.cfg.tor.hash(&mut h);
             self.cfg.warp.hash(&mut h);
-            self.cfg.cookie.hash(&mut h); // FIXED: Added cookie to hash
+            self.cfg.cookie.hash(&mut h);
             h.finish()
         }
     }
@@ -181,6 +182,7 @@ mod state {
         pub blocked: u64,
         pub global_cfg: GlobalConfig,
         pub sync: SyncState,
+        pub bookmarks: Vec<Bookmark>,
     }
     
     impl State {
@@ -194,6 +196,7 @@ mod state {
                 blocked: 0,
                 global_cfg: GlobalConfig::default(),
                 sync: SyncState::default(),
+                bookmarks: Vec::new(),
             }
         }
         
@@ -271,7 +274,7 @@ mod net {
     
     pub fn build_client(c: &state::TabConfig) -> reqwest::Client {
         let mut b = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nexus/1.0")
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .cookie_store(!c.cookie)
             .danger_accept_invalid_certs(false)
             .timeout(Duration::from_secs(30));
@@ -311,11 +314,81 @@ mod injection {
         let (mut css, mut js) = (String::new(), String::new());
         
         if cfg.ad { css.push_str(r#"[class*="ad-"],[id*="ad-"],.adsbygoogle,#google_ads,iframe[src*="doubleclick"],[class*="sponsor"],[id*="banner"],.ad-container,.adsbox{display:none!important;height:0!important;width:0!important;overflow:hidden!important}"#); }
-        if cfg.trk { js.push_str(r#"!function(){const t=['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'],n=t=>t.some(t=>(""+t).includes(t)),o=()=>{try{window.top&&window.top.nexusBlocked&&window.top.nexusBlocked()}catch(t){}},e=window.fetch;window.fetch=function(t,r){return n(t)?(o(),Promise.reject("Blocked")):e.apply(this,arguments)};const i=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(t,n){return n(t)?(o(),undefined):i.apply(this,arguments)},navigator.sendBeacon=()=>!1}()"#); }
+        if cfg.trk { js.push_str(r#"!function(){const t=['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'],n=t=>t.some(t=>(""+t).includes(t)),o=()=>{try{window.top.postMessage(JSON.stringify({a:'inc',p:''}),'*')}catch(t){}},e=window.fetch;window.fetch=function(t,r){return n(t)?(o(),Promise.reject("Blocked")):e.apply(this,arguments)};const i=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(t,n){return n(t)?(o(),undefined):i.apply(this,arguments)},navigator.sendBeacon=()=>!1}()"#); }
         if cfg.cookie { js.push_str(r#"!function(){const t=Object.getOwnPropertyDescriptor(Document.prototype,"cookie");t&&(Object.defineProperty(document,"cookie",{set(n){/(_ga|track|fbp)/.test(n)||t.set.call(this,n)},get(){return t.get.call(this)}}))}()"#); }
         if cfg.anti_fp { js.push_str(r#"!function(){HTMLCanvasElement.prototype.toDataURL=()=>"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";const t=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(n){return 37445===n?"Nexus":37446===n?"Nexus":t.apply(this,arguments)},Object.defineProperty(navigator,"hardwareConcurrency",{get:()=>4}),Object.defineProperty(navigator,"deviceMemory",{get:()=>4})}()"#); }
         
-        js.push_str(r#"!function(){const t=()=>{document.querySelectorAll("form").forEach(n=>{if(!n.dataset.nexusMonitored){let o=!1,e=!1,r=null,s=null;n.querySelectorAll("input").forEach(t=>{"password"===t.type&&(e=!0,s=t),/text|email/.test(t.type)||/user|email/i.test(t.name)&&(o=!0,r=t)}),o&&e&&(n.dataset.nexusMonitored="true",n.addEventListener("submit",function(t){t.preventDefault(),window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage(JSON.stringify({a:"password-detected",p:{url:window.location.href,username:r?r.value:"",password:s?s.value:""}})),setTimeout(()=>n.submit(),100)}))}});const n=new MutationObserver(t);n.observe(document.body,{childList:!0,subtree:!0}),t()},o=()=>{const t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";return Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>t[n%t.length]).join("")};window.nexusGeneratePassword=o,window.nexusFillPassword=(t,n)=>{let o=null,e=null;for(const n of document.querySelectorAll("input"))"password"===n.type&&!e&&(e=n),/text|email/.test(n.type)||/user|email/i.test(n.name)&&(o=n);o&&(o.value=t),e&&(e.value=n)}}()"#);
+        js.push_str(r#"
+        !function(){
+            const t=()=>{
+                document.querySelectorAll("form").forEach(n=>{
+                    if(!n.dataset.nexusMonitored){
+                        let o=!1,e=!1,r=null,s=null;
+                        n.querySelectorAll("input").forEach(t=>{
+                            "password"===t.type&&(e=!0,s=t);
+                            (/text|email/.test(t.type)||/user|email/i.test(t.name))&&(o=!0,r=t);
+                        });
+                        if(o&&e){
+                            n.dataset.nexusMonitored="true";
+                            n.addEventListener("submit",function(t){
+                                window.top.postMessage(JSON.stringify({a:"password-detected",p:{url:window.location.href,username:r?r.value:"",password:s?s.value:""}}),'*');
+                            });
+                        }
+                    }
+                });
+            };
+            const n=new MutationObserver(t);
+            n.observe(document.body,{childList:!0,subtree:!0});
+            t();
+            window.nexusGeneratePassword=()=>{const t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";return Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>t[n%t.length]).join("")};
+            window.nexusFillPassword=(t,n)=>{let o=null,e=null;for(const n of document.querySelectorAll("input"))"password"===n.type&&!e&&(e=n),(/text|email/.test(n.type)||/user|email/i.test(n.name))&&(o=n);o&&(o.value=t);e&&(e.value=n)};
+        }();
+        
+        document.addEventListener('click', function(e) {
+            let a = e.target.closest('a');
+            if (a && a.href && !a.href.startsWith('javascript:') && !a.href.startsWith('#')) {
+                if (a.target === '_blank') {
+                    e.preventDefault();
+                    window.top.postMessage(JSON.stringify({a: 'new-tab-url', p: a.href}), '*');
+                } else {
+                    e.preventDefault();
+                    window.top.postMessage(JSON.stringify({a: 'nav-internal', p: a.href}), '*');
+                }
+            }
+        }, true);
+        
+        document.addEventListener('submit', function(e) {
+            let form = e.target;
+            let method = (form.method || 'get').toLowerCase();
+            e.preventDefault();
+            let url = new URL(form.action || window.location.href);
+            if (method === 'get') {
+                let formData = new FormData(form);
+                for (let [key, value] of formData.entries()) {
+                    url.searchParams.append(key, value);
+                }
+                window.top.postMessage(JSON.stringify({a: 'nav-internal', p: url.href}), '*');
+            } else {
+                let formData = new FormData(form);
+                let body = {};
+                for (let [key, value] of formData.entries()) {
+                    body[key] = value;
+                }
+                window.top.postMessage(JSON.stringify({a: 'nav-post', p: {url: url.href, body: body}}), '*');
+            }
+        }, true);
+        
+        window.open = function(url) {
+            window.top.postMessage(JSON.stringify({a: 'new-tab-url', p: url}), '*');
+            return null;
+        };
+        
+        const oldLog = console.log;
+        console.log = function(...args) {
+            window.top.postMessage(JSON.stringify({a: 'console-log', p: args.join(' ')}), '*');
+            oldLog.apply(console, args);
+        };
+        "#);
         
         let payload = format!(r#"<style id="nexus-shield-css">{}</style><script id="nexus-shield-js">{}</script>"#, css, js);
         PAYLOAD_CACHE.lock().unwrap().insert(hash, payload.clone());
@@ -340,7 +413,6 @@ mod vault {
     
     const VAULT_FILE: &str = "nexus_vault.dat";
     lazy_static::lazy_static! {
-        // FIXED: Changed to StdMutex for blocking operations
         static ref VAULT_LOCK: StdMutex<()> = StdMutex::new(());
     }
     
@@ -392,9 +464,6 @@ mod vault {
         })?
     }
     
-    // FIXED: previous implementation used `.cycle().take(len)`, which
-    // just repeats the charset in a fixed, predictable order (e.g.
-    // "ABCDEFGH...") instead of generating a random password.
     pub fn generate(len: usize) -> String {
         const CHARSET: &[u8] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
@@ -414,7 +483,6 @@ mod vault {
     }
     
     pub fn save(entries: &[state::VaultEntry]) -> bool {
-        // FIXED: Proper locking with StdMutex
         let _guard = VAULT_LOCK.lock().unwrap();
         let temp = format!("{}.tmp", VAULT_FILE);
         serde_json::to_vec(entries)
@@ -430,17 +498,9 @@ mod vault {
 mod sync {
     use super::*;
     
-    pub fn import_from_chrome() -> Result<Vec<state::VaultEntry>, String> { 
-        Ok(Vec::new()) 
-    }
-    
-    pub fn import_from_firefox() -> Result<Vec<state::VaultEntry>, String> { 
-        Ok(Vec::new()) 
-    }
-    
-    pub fn import_from_edge() -> Result<Vec<state::VaultEntry>, String> { 
-        Ok(Vec::new()) 
-    }
+    pub fn import_from_chrome() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
+    pub fn import_from_firefox() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
+    pub fn import_from_edge() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
 }
 
 // ======================
@@ -512,9 +572,6 @@ mod dl {
     
     const PARTS: usize = 16;
     
-    // FIXED: Added missing IO imports
-    use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-    
     pub async fn turbo(url: String, st: Arc<RwLock<state::State>>) {
         let client = {
             let mut g = st.write().await;
@@ -532,17 +589,19 @@ mod dl {
                     .unwrap_or(false)))
             .unwrap_or((0, false));
         
+        let f_name = url.split('/').last().filter(|s| !s.is_empty()).unwrap_or("nxdl.bin").to_string();
+        let f_name = format!("./{}", f_name);
+        
         if len == 0 || !accept_ranges {
             if let Ok(r) = client.get(&url).send().await {
                 if let Ok(b) = r.bytes().await {
-                    let _ = tokio::fs::write(url.split('/').last().unwrap_or("nxdl.bin"), &b).await;
+                    let _ = tokio::fs::write(&f_name, &b).await;
                 }
             }
             return;
         }
         
-        let (chunk, f_name) = ((len + PARTS as u64 - 1) / PARTS as u64, 
-            url.split('/').last().filter(|s| !s.is_empty()).unwrap_or("nxdl.bin").to_string());
+        let chunk = (len + PARTS as u64 - 1) / PARTS as u64;
         
         let file = match tokio::fs::OpenOptions::new()
             .write(true).create(true).truncate(true)
@@ -591,7 +650,7 @@ mod dl {
 mod search {
     pub fn resolve(i: &str) -> String {
         let t = i.trim();
-        if t.starts_with("http") { t.into() }
+        if t.starts_with("http") || t.starts_with("nexus://") { t.into() }
         else if t.contains('.') && !t.contains(' ') { format!("https://{}", t) }
         else { format!("https://www.google.com/search?q={}", url::form_urlencoded::byte_serialize(t.as_bytes()).collect::<String>()) }
     }
@@ -719,9 +778,6 @@ mod extensions {
                         url_matches_pattern(url, pattern)
                     )
                 )
-                // FIXED: `[].iter()` borrowed a temporary array that was
-                // dropped at the end of the closure (E0716). Use a
-                // 'static empty slice instead.
                 .flat_map(|cs| cs.css.as_deref().unwrap_or(&[]).iter())
                 .collect::<Vec<_>>();
                 
@@ -758,10 +814,6 @@ mod extensions {
                 None => None,
             };
             
-            // FIXED: this function is already `async`, so calling
-            // Handle::current().block_on(...) here would panic at
-            // runtime ("Cannot start a runtime from within a runtime").
-            // Just await directly instead.
             match bg_script {
                 Some(path) => fs::read_to_string(&path).await.ok(),
                 None => None,
@@ -843,49 +895,6 @@ mod extensions {
                                         a: 'ext-msg',
                                         p: message
                                     }));
-                                    if (responseCallback) {
-                                        const listener = function(event) {
-                                            try {
-                                                const data = JSON.parse(event.data);
-                                                if (data.a === 'ext-response') {
-                                                    responseCallback(data.p);
-                                                    window.removeEventListener('message', listener);
-                                                }
-                                            } catch (e) {}
-                                        };
-                                        window.addEventListener('message', listener);
-                                    }
-                                }
-                            }
-                        },
-                        storage: {
-                            local: {
-                                get: function(keys, callback) {
-                                    if (window.chrome && window.chrome.webview) {
-                                        window.chrome.webview.postMessage(JSON.stringify({
-                                            a: 'ext-storage-get',
-                                            p: keys
-                                        }));
-                                        const listener = function(event) {
-                                            try {
-                                                const data = JSON.parse(event.data);
-                                                if (data.a === 'ext-storage-response') {
-                                                    callback(data.p);
-                                                    window.removeEventListener('message', listener);
-                                                }
-                                            } catch (e) {}
-                                        };
-                                        window.addEventListener('message', listener);
-                                    }
-                                },
-                                set: function(items, callback) {
-                                    if (window.chrome && window.chrome.webview) {
-                                        window.chrome.webview.postMessage(JSON.stringify({
-                                            a: 'ext-storage-set',
-                                            p: items
-                                        }));
-                                        if (callback) callback();
-                                    }
                                 }
                             }
                         }
@@ -964,11 +973,7 @@ header{display:flex;align-items:center;gap:8px;padding:10px;background:var(--pan
 .btn:hover{background:var(--brd);color:var(--bg)}
 .btn-acc{border-color:var(--acc);color:var(--acc)}.btn-acc:hover{background:var(--acc);color:#fff}
 #url{flex:1;background:var(--input);border:1px solid var(--brd);color:var(--t1);padding:10px 14px;outline:0;border-radius:6px}
-#workspace{display:flex;flex:1;overflow:hidden}
-main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
-.logo{font-size:5rem;font-weight:900;color:var(--brd);letter-spacing:12px}
-.sub{color:var(--acc);font-size:1rem;letter-spacing:6px;margin-bottom:40px;font-weight:600}
-#search{width:60%;max-width:600px;padding:16px;font-size:1.2rem;text-align:center;border:2px solid var(--brd);color:var(--t1);border-radius:30px}
+#workspace{display:flex;flex:1;overflow:hidden;background:#fff}
 aside{width:320px;background:var(--panel);border-left:1px solid var(--brd);display:flex;flex-direction:column;overflow:hidden}
 .side-hd{padding:18px;border-bottom:1px solid var(--brd);font-weight:700;color:var(--brd);letter-spacing:2px;font-size:14px}
 .side-scroll{flex:1;overflow-y:auto;padding:20px}
@@ -981,7 +986,7 @@ input:checked+.sl{background:var(--brd);border-color:var(--brd)}
 input:checked+.sl:before{transform:translateX(20px);background:var(--bg)}
 .stat{font-size:1.5rem;color:var(--brd);font-weight:800;text-align:center;margin:10px 0}
 #dp{position:fixed;right:-400px;top:0;width:400px;height:100vh;background:var(--panel);border-left:2px solid var(--acc);z-index:99;padding:20px;overflow-y:auto;transition:right .3s}
-#dp.o{right:0}.le{font-size:12px;margin-bottom:5px}.le.error{color:var(--acc)}.le.info{color:var(--brd)}
+#dp.o{right:0}.le{font-size:12px;margin-bottom:5px;word-break:break-all}.le.error{color:var(--acc)}.le.info{color:var(--brd)}
 .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border:2px solid var(--brd);padding:30px;z-index:1000;display:none;border-radius:12px}
 .modal.show{display:block}
 .v-in{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);color:var(--t1);border-radius:6px;outline:0}
@@ -1027,18 +1032,18 @@ input:checked+.sl:before{transform:translateX(20px);background:var(--bg)}
 <div id="app">
   <div id="tabs"></div>
   <header>
-    <button class="btn" onclick="sr('back')">⟵</button><button class="btn" onclick="sr('fwd')">⟶</button><button class="btn" onclick="sr('ref')">⟳</button>
-    <input type="text" id="url" placeholder="nexus://home" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="btn" onclick="sr('back')">⟵</button>
+    <button class="btn" onclick="sr('fwd')">⟶</button>
+    <button class="btn" onclick="sr('ref')">⟳</button>
+    <input type="text" id="url" placeholder="Search or enter address" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="btn" onclick="sr('bookmark', v('url'))" title="Bookmark">⭐</button>
+    <button class="btn" onclick="toggleModal('vault')" title="Vault">🔐</button>
+    <button class="btn" onclick="toggleModal('aip')" title="AI Assistant">🤖</button>
+    <button class="btn" onclick="document.getElementById('dp').classList.toggle('o')" title="Dev Console">💻</button>
     <button class="btn btn-acc" onclick="sr('new-tab', 'normal')">+ Tab</button>
     <button class="btn" id="sidebar-toggle">≡</button>
   </header>
-  <div id="workspace">
-    <main>
-      <div class="logo">NEXUS</div>
-      <div class="sub">ELITE RUST // AES-256 ENCRYPTED</div>
-      <input type="text" id="search" placeholder="Search Google or type URL..." onkeydown="if(event.key==='Enter')sr('nav',this.value)">
-    </main>
-  </div>
+  <div id="workspace"></div>
   <div id="dp"><h2 style="color:var(--acc);border-bottom:1px solid var(--acc)">DEV CONSOLE</h2><div id="dl"></div></div>
 
   <div id="sidebar">
@@ -1185,7 +1190,6 @@ function switchTab(i) { i!==activeTab && (activeTab=i, sr('switch-tab',i), rende
 function sr(a,p){window.chrome?.webview?.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
 function uc(c){document.getElementById('tc').textContent=c+' Blocked'}
-window.nexusBlocked=()=>sr('inc');
 function toggleModal(id){document.getElementById(id).classList.toggle('show')}
 function setUrl(u){document.getElementById('url').value=u}
 function vAct(a){sr('vault',{a,m:v('v-master'),d:v('v-domain'),u:v('v-user'),p:v('v-pass')})}
@@ -1258,12 +1262,6 @@ function toggleExtension(id, enabled) {
 
 document.addEventListener('DOMContentLoaded',function() {
   initTabs();
-  // FIXED: `extensions::api::setup_extension_apis()` is a Rust
-  // function, not JS — it is invalid JS syntax here and was never
-  // actually invoked. It is now called from Rust in main() right
-  // after the WebView is built (it injects the `chrome` polyfill).
-
-  // Yêu cầu danh sách extensions
   sr('ext-list', '');
 });
 
@@ -1279,21 +1277,29 @@ window.addEventListener('message',function(event) {
       extensions = data.p;
       renderExtensions(extensions);
     } else if (data.a === 'ext-toggle-response') {
-      // Cập nhật local state
       const ext = extensions.find(e => e.id === data.p.id);
       if (ext) ext.enabled = data.p.enabled;
       renderExtensions(extensions);
+    } else if (data.a === 'nav-internal') {
+      sr('nav-internal', data.p);
+    } else if (data.a === 'nav-post') {
+      sr('nav-post', data.p);
+    } else if (data.a === 'new-tab-url') {
+      sr('new-tab-url', data.p);
+    } else if (data.a === 'console-log') {
+      sr('console-log', data.p);
+    } else if (data.a === 'inc') {
+      sr('inc', '');
     }
-  } catch (e) {
-    console.error('Error processing message:', e);
-  }
+  } catch (e) {}
 });
 
 function updateTabs(d) {
   tabs = d.tabs;
   activeTab = d.activeTab;
   renderTabs();
-  document.getElementById('url').value = tabs[activeTab].url === 'nexus://home' ? 'nexus://home' : tabs[activeTab].url;
+  let currentUrl = tabs[activeTab].url;
+  document.getElementById('url').value = currentUrl === 'nexus://home' ? '' : currentUrl;
 }
 </script></body></html>"###.into()
 }
@@ -1304,7 +1310,7 @@ function updateTabs(d) {
 fn render_page(html_out: &str, url: &str, px: &wry::application::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
         let _ = px.send_event(Ev::Js(format!(
-            "{{f=document.createElement('iframe');f.style='width:100%;height:100%;border:none';f.srcdoc={};m=document.querySelector('main');m.innerHTML='';m.appendChild(f)}}",
+            "{{let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);}}",
             h
         )));
         let _ = px.send_event(Ev::Js(format!("setUrl({});", u)));
@@ -1315,8 +1321,37 @@ fn render_page(html_out: &str, url: &str, px: &wry::application::event_loop::Eve
 // LOAD URL
 // ======================
 async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &wry::application::event_loop::EventLoopProxy<Ev>, record: bool) {
+    load_url_method(url, "GET", None, st, px, record).await;
+}
+
+async fn load_url_method(url: String, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &wry::application::event_loop::EventLoopProxy<Ev>, record: bool) {
     let cfg = { let g = st.read().await; g.active_tab().cfg.clone() };
     
+    if url == "nexus://home" {
+        let home_html = r#"
+        <!DOCTYPE html><html><head><style>
+        body { background: var(--bg, #0a0a0a); color: var(--t1, #00ffff); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        h1 { font-size: 5rem; letter-spacing: 12px; margin-bottom: 10px; font-weight: 900; }
+        p { color: var(--acc, #ff007f); letter-spacing: 6px; font-weight: 600; margin-bottom: 40px; }
+        .search { width: 60%; max-width: 600px; padding: 16px; border-radius: 30px; border: 2px solid var(--t1, #00ffff); background: var(--input, #111); color: #fff; font-size: 1.2rem; text-align: center; outline: none; }
+        </style></head><body>
+        <h1>NEXUS</h1>
+        <p>ELITE RUST // AES-256 ENCRYPTED</p>
+        <input type="text" class="search" placeholder="Search Google or type URL..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
+        </body></html>
+        "#;
+        render_page(home_html, &url, px);
+        if record {
+            let mut g = st.write().await;
+            let t = g.active_tab_mut();
+            t.push_hist(url.clone());
+            t.url = url;
+            t.name = "Home".into();
+            update_tabs(&g, px);
+        }
+        return;
+    }
+
     if cfg.sinkhole && sinkhole::check(&url) {
         let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE: {}','error');", url)));
         let blocked = { let mut g = st.write().await; g.blocked += 1; g.blocked };
@@ -1331,52 +1366,76 @@ async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &wry::applicat
         t.client.clone().unwrap_or_else(reqwest::Client::new)
     };
     
-    if let Ok(r) = client.get(&url).header("Referer", "").header("DNT", "1").send().await {
-        if let Ok(h) = r.text().await {
-            // FIXED: Proper HTML escaping for URL
-            let safe_url = url
-                .replace('&', "&amp;")
-                .replace('"', "&quot;");
-            let shield = injection::get_security_payload(&cfg);
-            let inj = format!(r#"<base href="{}">{}"#, safe_url, shield);
-            
-            let html_out = if let Some(start) = h.to_lowercase().find("<head") {
-                h[..start].to_string() + &h[start..].find('>').map_or_else(
-                    || format!("{}{}", inj, h),
-                    |end| {
-                        let pos = start + end + 1;
-                        format!("{}{}{}", &h[..pos], inj, &h[pos..])
-                    }
-                )
-            } else { format!("{}{}", inj, h) };
-            
-            // Thêm extensions injection
-            let extensions = extensions::load_all_extensions().await;
-            if let (Some(js), Some(css)) = extensions::get_injections_for_url(&url, &extensions).await {
-                let ext_inj = format!(r#"<style id="nexus-ext-css">{}</style><script id="nexus-ext-js">{}</script>"#, css, js);
-                
-                // Chèn vào trước </body>
-                if let Some(body_end) = html_out.rfind("</body>") {
-                    let mut new_html = String::with_capacity(html_out.len() + ext_inj.len());
-                    new_html.push_str(&html_out[..body_end]);
-                    new_html.push_str(&ext_inj);
-                    new_html.push_str(&html_out[body_end..]);
-                    render_page(&new_html, &url, px);
-                } else {
-                    render_page(&format!("{}{}", html_out, ext_inj), &url, px);
+    let req = if method == "POST" {
+        let mut form = HashMap::new();
+        if let Some(b) = body {
+            if let Some(obj) = b.as_object() {
+                for (k, v) in obj {
+                    form.insert(k.clone(), v.as_str().unwrap_or("").to_string());
                 }
-            } else {
-                render_page(&html_out, &url, px);
-            }
-            
-            if record {
-                let mut g = st.write().await;
-                let t = g.active_tab_mut();
-                t.push_hist(url.clone());
-                t.url = url;
-                update_tabs(&g, px);
             }
         }
+        client.post(&url).form(&form)
+    } else {
+        client.get(&url)
+    };
+    
+    if let Ok(r) = req.header("Referer", "").header("DNT", "1").send().await {
+        let content_type = r.headers().get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("text/html")
+            .to_lowercase();
+
+        if content_type.contains("text/html") || content_type.contains("text/plain") {
+            if let Ok(h) = r.text().await {
+                let safe_url = url.replace('&', "&amp;").replace('"', "&quot;");
+                let shield = injection::get_security_payload(&cfg);
+                let inj = format!(r#"<base href="{}">{}"#, safe_url, shield);
+                
+                let mut html_out = if let Some(start) = h.to_lowercase().find("<head") {
+                    h[..start].to_string() + &h[start..].find('>').map_or_else(
+                        || format!("{}{}", inj, h),
+                        |end| {
+                            let pos = start + end + 1;
+                            format!("{}{}{}", &h[..pos], inj, &h[pos..])
+                        }
+                    )
+                } else { format!("{}{}", inj, h) };
+                
+                let extensions = extensions::load_all_extensions().await;
+                if let (Some(js), Some(css)) = extensions::get_injections_for_url(&url, &extensions).await {
+                    let ext_api = r#"<script>if(typeof chrome==='undefined'){window.chrome={runtime:{sendMessage:function(m,c){window.top.postMessage(JSON.stringify({a:'ext-msg',p:m}),'*');}}}}</script>"#;
+                    let ext_inj = format!(r#"{}<style id="nexus-ext-css">{}</style><script id="nexus-ext-js">{}</script>"#, ext_api, css, js);
+                    if let Some(body_end) = html_out.rfind("</body>") {
+                        html_out.insert_str(body_end, &ext_inj);
+                    } else {
+                        html_out.push_str(&ext_inj);
+                    }
+                }
+                
+                render_page(&html_out, &url, px);
+            }
+        } else if content_type.contains("image/") {
+            let html = format!(r#"<html><body style="margin:0;background:#0e0e0e;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="{}" style="max-width:100%;max-height:100%;"></body></html>"#, url);
+            render_page(&html, &url, px);
+        } else {
+            let _ = px.send_event(Ev::Js(format!("lg('Downloading: {}','info');", url)));
+            tokio::spawn(dl::turbo(url.clone(), st.clone()));
+            return;
+        }
+        
+        if record {
+            let mut g = st.write().await;
+            let t = g.active_tab_mut();
+            t.push_hist(url.clone());
+            t.url = url.clone();
+            if let Ok(parsed) = url::Url::parse(&url) {
+                t.name = parsed.host_str().unwrap_or("New Tab").to_string();
+            }
+            update_tabs(&g, px);
+        }
+    } else {
+        let _ = px.send_event(Ev::Js(format!("lg('Failed to load: {}','error');", url)));
     }
 }
 
@@ -1421,9 +1480,6 @@ fn main() {
         .unwrap();
     
     let handle = rt.handle().clone();
-    // FIXED: `handle` is moved into the `with_ipc_handler` closure below
-    // (it's a `move` closure), so it would no longer be usable afterwards
-    // in the winit event loop. Keep a separate clone for that.
     let handle_for_loop = handle.clone();
     let (ist, ipx) = (st.clone(), px.clone());
     
@@ -1440,9 +1496,39 @@ fn main() {
             
             handle.spawn(async move {
                 match a.as_str() {
-                    "nav" => {
+                    "nav" | "nav-internal" => {
                         if let Some(u) = d.as_str().map(search::resolve) {
                             load_url(u, ist.clone(), &ipx, true).await;
+                        }
+                    }
+                    "nav-post" => {
+                        let url = d["url"].as_str().unwrap_or("").to_string();
+                        let body = d["body"].clone();
+                        load_url_method(url, "POST", Some(body), ist.clone(), &ipx, true).await;
+                    }
+                    "new-tab-url" => {
+                        if let Some(url) = d.as_str() {
+                            let mut g = ist.write().await;
+                            let idx = g.new_tab(state::TabMode::Normal);
+                            ipx.send_event(Ev::NewTab(idx)).ok();
+                            update_tabs(&g, &ipx);
+                            let u = url.to_string();
+                            drop(g);
+                            load_url(u, ist.clone(), &ipx, true).await;
+                        }
+                    }
+                    "console-log" => {
+                        if let Some(msg) = d.as_str() {
+                            let safe_msg = msg.replace('\'', "\\'").replace('\n', " ");
+                            ipx.send_event(Ev::Js(format!("lg('{}','info');", safe_msg))).ok();
+                        }
+                    }
+                    "bookmark" => {
+                        if let Some(url) = d.as_str() {
+                            if url.is_empty() || url == "nexus://home" { return; }
+                            let mut g = ist.write().await;
+                            g.bookmarks.push(state::Bookmark { title: url.to_string(), url: url.to_string() });
+                            ipx.send_event(Ev::Js("lg('⭐ Bookmark saved','info');".into())).ok();
                         }
                     }
                     "back" => {
@@ -1558,7 +1644,6 @@ fn main() {
                             
                             if let Some((user, pass, nonce, salt)) = found {
                                 if let Some(dec) = vault::decrypt(&pass, &nonce, &salt, &master) {
-                                    // FIXED: Proper JSON escaping for JS
                                     if let Ok(d) = serde_json::to_string(&dec) {
                                         ipx.send_event(Ev::Js(format!(
                                             "document.getElementById('v-pass').value={};vRes('🔓 User: {}');",
@@ -1606,13 +1691,13 @@ fn main() {
                         g.switch_tab(i as usize);
                         update_tabs(&g, &ipx);
                         if let Some(url) = g.active_tab().current() {
+                            drop(g);
                             load_url(url, ist.clone(), &ipx, false).await;
                         }
                     },
                     "password-detected" => {
                         let (url, user, pass) = (d["url"].as_str().unwrap_or(""), d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""));
                         if !url.is_empty() && ist.read().await.global_cfg.auto_save_passwords {
-                            // FIXED: Proper JSON escaping for JS
                             let url_js = serde_json::to_string(url).unwrap_or_default();
                             let user_js = serde_json::to_string(user).unwrap_or_default();
                             let pass_js = serde_json::to_string(pass).unwrap_or_default();
@@ -1626,7 +1711,6 @@ fn main() {
                     "save-password" => {
                         let (url, user, pass) = (d["url"].as_str().unwrap_or(""), d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""));
                         if !url.is_empty() && !user.is_empty() && !pass.is_empty() {
-                            // FIXED: Proper domain extraction
                             let domain = {
                                 if let Ok(parsed) = Url::parse(url) {
                                     parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string())
@@ -1658,7 +1742,6 @@ fn main() {
                     "fill-password" => {
                         let (user, pass) = (d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""));
                         if !user.is_empty() && !pass.is_empty() {
-                            // FIXED: Proper JSON escaping for JS
                             let user_js = serde_json::to_string(user).unwrap_or_default();
                             let pass_js = serde_json::to_string(pass).unwrap_or_default();
                             
@@ -1703,7 +1786,6 @@ fn main() {
                     },
                     "ext-toggle" => {
                         if let (Some(id), Some(enabled)) = (d["id"].as_str(), d["enabled"].as_bool()) {
-                            let mut g = ist.write().await;
                             let ext_dir = std::path::Path::new("nexus_extensions").join(id);
                             if ext_dir.exists() {
                                 if enabled {
@@ -1718,6 +1800,9 @@ fn main() {
                             }
                         }
                     },
+                    "ext-msg" => {
+                        ipx.send_event(Ev::Js(format!("lg('Extension message: {}','info');", d))).ok();
+                    },
                     _ => {}
                 }
             });
@@ -1725,14 +1810,9 @@ fn main() {
     
     let wv = wb.build().unwrap();
     
-    // FIXED: actually call setup_extension_apis (previously only an
-    // invalid, dead JS call existed for this).
     extensions::api::setup_extension_apis(&wv);
-    
-    // Tự động phát hiện WARP/Tor và cập nhật UI
     autoconfig::update_ui(&px);
     
-    // Tải extensions
     let ext_list = rt.block_on(async { extensions::load_all_extensions().await });
     let ext_data = ext_list.iter().map(|e| json!({
         "id": e.id,
@@ -1758,6 +1838,11 @@ fn main() {
                 px.send_event(Ev::Js("lg('AES-256-GCM Vault Ready','info')".into())).ok();
                 px.send_event(Ev::Js("lg('Extensions System Ready','info')".into())).ok();
                 px.send_event(Ev::Js("lg('WARP/Tor auto-detection complete','info')".into())).ok();
+                
+                handle_for_loop.spawn({
+                    let (st, px) = (st.clone(), px.clone());
+                    async move { load_url("nexus://home".into(), st, &px, false).await; }
+                });
             }
             Event::UserEvent(Ev::Js(j)) => {
                 js_queue.push(j);
@@ -1766,13 +1851,9 @@ fn main() {
                     last_flush = Instant::now();
                 }
             }
-            Event::UserEvent(Ev::NewTab(idx)) | Event::UserEvent(Ev::CloseTab(idx)) => {
+            Event::UserEvent(Ev::NewTab(_)) | Event::UserEvent(Ev::CloseTab(_)) => {
                 update_tabs(&st.blocking_read(), &px);
                 if let Event::UserEvent(Ev::NewTab(_)) = ev {
-                    // FIXED: this closure runs on the winit event-loop
-                    // thread, which is not inside the Tokio runtime, so
-                    // bare `tokio::spawn` would panic ("there is no
-                    // reactor running"). Use the captured Handle instead.
                     handle_for_loop.spawn({
                         let (st, px) = (st.clone(), px.clone());
                         async move { load_url("nexus://home".into(), st, &px, false).await; }
@@ -1784,8 +1865,3 @@ fn main() {
         }
     });
 }
-
-// ======================
-// HELPERS
-// (json! macro now defined at top of file)
-// ======================
