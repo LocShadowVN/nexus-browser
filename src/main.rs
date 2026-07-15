@@ -8,7 +8,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use wry::application::{
+use tao::{
     dpi::LogicalSize,
     event::{Event, StartCause},
     event_loop::{ControlFlow, EventLoopBuilder},
@@ -21,7 +21,7 @@ use tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 use uuid::Uuid;
-use wry::webview::WebViewBuilder;
+use wry::WebViewBuilder;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
@@ -899,7 +899,7 @@ mod extensions {
     pub mod api {
         use super::*;
         
-        pub fn setup_extension_apis(webview: &wry::webview::WebView) {
+        pub fn setup_extension_apis(webview: &wry::WebView) {
             webview.evaluate_script(r#"
                 if (typeof chrome === 'undefined') {
                     window.chrome = {
@@ -911,8 +911,8 @@ mod extensions {
                                 };
                             },
                             sendMessage: function(message, responseCallback) {
-                                if (window.chrome && window.chrome.webview) {
-                                    window.chrome.webview.postMessage(JSON.stringify({
+                                if (window.ipc) {
+                                    window.ipc.postMessage(JSON.stringify({
                                         a: 'ext-msg',
                                         p: message
                                     }));
@@ -965,7 +965,7 @@ mod autoconfig {
         std::net::TcpStream::connect("127.0.0.1:9050").is_ok()
     }
     
-    pub fn update_ui(px: &wry::application::event_loop::EventLoopProxy<Ev>) {
+    pub fn update_ui(px: &tao::event_loop::EventLoopProxy<Ev>) {
         let warp_detected = detect_warp();
         let tor_detected = detect_tor();
         
@@ -1253,7 +1253,7 @@ function switchTab(i) {
   }
 }
 
-function sr(a,p){window.chrome?.webview?.postMessage(JSON.stringify({a,p}))}
+function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
 function uc(c){document.getElementById('tc').textContent=c+(lang==='vi'?' Đã chặn':' Blocked')}
 function toggleModal(id){document.getElementById(id).classList.toggle('show')}
@@ -1372,7 +1372,7 @@ window.updateTabs = function(d) {
 // ======================
 // RENDER PAGE (SECURE IFRAME)
 // ======================
-fn render_page(html_out: &str, url: &str, px: &wry::application::event_loop::EventLoopProxy<Ev>) {
+fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
         // BẢO MẬT: Thêm sandbox attribute để ngăn chặn popup và script độc hại thoát ra ngoài
         // Cho phép allow-presentation để YouTube có thể chạy video
@@ -1387,11 +1387,11 @@ fn render_page(html_out: &str, url: &str, px: &wry::application::event_loop::Eve
 // ======================
 // LOAD URL (WITH TRACKING STRIPPER)
 // ======================
-async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &wry::application::event_loop::EventLoopProxy<Ev>, record: bool) {
+async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
     load_url_method(url, "GET", None, st, px, record).await;
 }
 
-async fn load_url_method(url: String, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &wry::application::event_loop::EventLoopProxy<Ev>, record: bool) {
+async fn load_url_method(url: String, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
     let cfg = { let g = st.read().await; g.active_tab().cfg.clone() };
     
     if url == "nexus://home" {
@@ -1531,7 +1531,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
 // ======================
 // UPDATE TABS
 // ======================
-fn update_tabs(state: &state::State, px: &wry::application::event_loop::EventLoopProxy<Ev>) {
+fn update_tabs(state: &state::State, px: &tao::event_loop::EventLoopProxy<Ev>) {
     let tabs = state.tabs.iter().map(|t| json!({
         "id": t.id, "name": t.name, "url": t.url,
         "frozen": t.frozen, // TÍNH NĂNG ĐÓNG BĂNG TAB
@@ -1598,17 +1598,15 @@ fn main() {
         }
     });
     
-    let wb = WebViewBuilder::new(w)
-        .unwrap()
+    let wb = WebViewBuilder::new()
         // BẢO MẬT: Tắt DevTools để tránh bị inject script từ bên ngoài
         .with_devtools(false)
         // SPOOFING: Giả mạo User-Agent ở cấp độ WebView để Google Login không chặn
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .with_html(html())
-        .unwrap()
         .with_back_forward_navigation_gestures(false)
         .with_hotkeys_zoom(false)
-        .with_ipc_handler(move |_window, msg| {
+        .with_ipc_handler(move |msg: String| {
             let (ist, ipx, handle) = (ist.clone(), ipx.clone(), handle.clone());
             let p: JsonValue = match serde_json::from_str(&msg) { Ok(v) => v, Err(_) => return };
             let (a, d) = (p["a"].as_str().unwrap_or("").to_string(), p["p"].clone());
@@ -1941,7 +1939,18 @@ fn main() {
             });
         });
     
-    let wv = wb.build().unwrap();
+    // FIXED cho wry 0.35+: WebViewBuilder::new() không còn nhận window lúc
+    // khởi tạo nữa — window được gắn vào lúc build(). Trên Linux, backend
+    // là WebKitGTK nên bắt buộc dùng build_gtk(window.gtk_window()) thay vì
+    // build(&w) (build(&w) sẽ panic/lỗi type trên Linux).
+    #[cfg(not(target_os = "linux"))]
+    let wv = wb.build(&w).unwrap();
+    #[cfg(target_os = "linux")]
+    let wv = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        wb.build_gtk(w.gtk_window()).unwrap()
+    };
     
     extensions::api::setup_extension_apis(&wv);
     autoconfig::update_ui(&px);
@@ -1993,7 +2002,7 @@ fn main() {
                     });
                 }
             }
-            Event::WindowEvent { event: wry::application::event::WindowEvent::CloseRequested, .. } => *cf = ControlFlow::Exit,
+            Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => *cf = ControlFlow::Exit,
             _ => {}
         }
     });
