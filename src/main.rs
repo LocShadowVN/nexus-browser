@@ -642,7 +642,7 @@ mod dl {
             set.spawn(async move {
                 if sem.acquire().await.is_err() { return; }
                 let response = client.get(&url).header("Range", format!("bytes={}-{}", s, e)).send().await;
-                if let Ok(mut response) = response {
+                if let Ok(response) = response {
                     let bytes = response.bytes().await.ok();
                     if let Some(bytes) = bytes {
                         let mut f = file.lock().await;
@@ -733,11 +733,12 @@ mod extensions {
             let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
                 .map_err(|e| format!("Invalid manifest.json: {}", e))?;
                 
+            let enabled = !path.join("DISABLED").exists();
             Ok(Self {
                 id: id.to_string(),
                 path,
                 manifest,
-                enabled: !path.join("DISABLED").exists(),
+                enabled,
             })
         }
         
@@ -1606,7 +1607,8 @@ fn main() {
         .with_html(html())
         .with_back_forward_navigation_gestures(false)
         .with_hotkeys_zoom(false)
-        .with_ipc_handler(move |msg: String| {
+        .with_ipc_handler(move |request: wry::http::Request<String>| {
+            let msg = request.into_body();
             let (ist, ipx, handle) = (ist.clone(), ipx.clone(), handle.clone());
             let p: JsonValue = match serde_json::from_str(&msg) { Ok(v) => v, Err(_) => return };
             let (a, d) = (p["a"].as_str().unwrap_or("").to_string(), p["p"].clone());
