@@ -230,7 +230,7 @@ mod state {
         pub auto_save_passwords: bool, pub show_password_suggestions: bool,
     }
     
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     pub struct SyncState {
         pub config: SyncConfig,
         pub chrome_vault: Vec<VaultEntry>,
@@ -1892,9 +1892,17 @@ fn main() {
                             g.sync.import_from_browser("edge"),
                         );
                         let active_tab = g.active_tab;
+                        // FIXED (E0502): `g.sync.method(&mut g.tabs[active_tab])`
+                        // makes the borrow checker treat the whole `g` as
+                        // borrowed once `&mut g.tabs[active_tab]` is taken
+                        // (indexing via `[]` doesn't get the same disjoint-
+                        // field treatment as plain field access). Clone the
+                        // small sync snapshot first so the two borrows never
+                        // overlap.
+                        let sync_snapshot = g.sync.clone();
                         {
                             let tab = &mut g.tabs[active_tab];
-                            g.sync.sync_to_active_tab(tab);
+                            sync_snapshot.sync_to_active_tab(tab);
                         }
                         if let Some(vault) = &g.tabs[active_tab].vault { vault::save(vault); }
                         ipx.send_event(Ev::Js(format!(
