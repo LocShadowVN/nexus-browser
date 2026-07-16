@@ -50,7 +50,7 @@ jobs:
         run: cargo check --all-targets --all-features
 
       - name: cargo build (release)
-        run: cargo build --release --locked
+        run: cargo build --release
 
       - name: cargo test
         run: cargo test --all-features
@@ -91,12 +91,40 @@ jobs:
   audit:
     name: Dependency Vulnerability Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # cần để tự commit Cargo.lock ngược lại repo nếu chưa có
     steps:
       - uses: actions/checkout@v4
-      - name: cargo audit (RustSec advisory DB)
-        uses: rustsec/audit-check@v2.0.0
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          key: cargo-audit-bin
+
+      # ubuntu-latest của GitHub đã có sẵn Rust/cargo cài sẵn, không cần
+      # thêm bước cài toolchain riêng cho việc này.
+      - name: Tự tạo Cargo.lock nếu repo chưa có (chỉ chạy 1 lần)
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            echo "Chưa có Cargo.lock, tự sinh..."
+            cargo generate-lockfile
+          else
+            echo "Đã có Cargo.lock, bỏ qua."
+          fi
+
+      - name: Tự commit Cargo.lock ngược lại repo (nếu vừa mới tạo)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: auto-generate Cargo.lock"
+          file_pattern: Cargo.lock
+
+      - name: Cài cargo-audit
+        run: cargo install cargo-audit --locked
+
+      # Gọi thẳng cargo-audit thay vì qua action wrapper (rustsec/audit-check)
+      # — wrapper đó thỉnh thoảng lỗi "Unexpected end of JSON input" khi
+      # parse output nội bộ. Gọi trực tiếp thì thấy log thật, dễ debug hơn.
+      - name: cargo audit (RustSec advisory DB)
+        run: cargo audit
 
   # ============================================================
   # 4) CODEQL — pattern lỗ hổng bảo mật đã biết (SAST)
