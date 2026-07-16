@@ -189,8 +189,7 @@ mod state {
     
     impl State {
         pub fn new() -> Self {
-            let mut tabs = Vec::new();
-            tabs.push(TabState::new(TabMode::Normal));
+            let tabs = vec![TabState::new(TabMode::Normal)];
             
             Self {
                 active_tab: 0,
@@ -463,7 +462,7 @@ mod vault {
         
         Some((
             general_purpose::STANDARD.encode(&ciphertext),
-            general_purpose::STANDARD.encode(&nonce),
+            general_purpose::STANDARD.encode(nonce),
             salt.as_str().to_string(),
         ))
     }
@@ -610,7 +609,7 @@ mod dl {
                     .unwrap_or(false)))
             .unwrap_or((0, false));
         
-        let f_name = url.split('/').last().filter(|s| !s.is_empty()).unwrap_or("nxdl.bin").to_string();
+        let f_name = url.split('/').next_back().filter(|s| !s.is_empty()).unwrap_or("nxdl.bin").to_string();
         let f_name = format!("./{}", f_name);
         
         if len == 0 || !accept_ranges {
@@ -622,7 +621,7 @@ mod dl {
             return;
         }
         
-        let chunk = (len + PARTS as u64 - 1) / PARTS as u64;
+        let chunk = len.div_ceil(PARTS as u64);
         
         let file = match tokio::fs::OpenOptions::new()
             .write(true).create(true).truncate(true)
@@ -824,11 +823,7 @@ mod extensions {
                     if let Some(worker) = &bg.service_worker {
                         Some(self.path.join(worker))
                     } else if let Some(scripts) = &bg.scripts {
-                        if let Some(first_script) = scripts.first() {
-                            Some(self.path.join(first_script))
-                        } else {
-                            None
-                        }
+                        scripts.first().map(|first_script| self.path.join(first_script))
                     } else {
                         None
                     }
@@ -846,10 +841,12 @@ mod extensions {
     fn url_matches_pattern(url: &str, pattern: &str) -> bool {
         if pattern == "<all_urls>" { return true; }
         
+        // FIXED: thứ tự cũ là "*"->".*" rồi mới escape "." — điều này escape
+        // luôn dấu "." vừa được chèn vào từ ".*", làm sai nghĩa glob "*".
+        // Phải escape dấu "." literal TRƯỚC, rồi mới biến "*" thành ".*".
         let pattern = pattern
-            .replace("*", ".*")
-            .replace(".", r"\.")
-            .replace("://", r"://");
+            .replace('.', r"\.")
+            .replace('*', ".*");
             
         Regex::new(&pattern)
             .map(|re| re.is_match(url))
@@ -955,7 +952,7 @@ mod autoconfig {
         #[cfg(target_os = "linux")]
         {
             std::process::Command::new("systemctl")
-                .args(&["is-active", "cloudflare-warp"])
+                .args(["is-active", "cloudflare-warp"])
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
@@ -1999,7 +1996,7 @@ fn main() {
             Event::UserEvent(Ev::Js(j)) => {
                 js_queue.push(j);
                 if js_queue.len() >= 5 || last_flush.elapsed() > Duration::from_millis(16) {
-                    let _ = wv.evaluate_script(&js_queue.drain(..).collect::<Vec<_>>().join(""));
+                    let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(""));
                     last_flush = Instant::now();
                 }
             }
