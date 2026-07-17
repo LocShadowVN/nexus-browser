@@ -110,6 +110,12 @@ jobs:
         # băng" mãi, không tự cập nhật.
         run: cargo update
 
+      # CHẨN ĐOÁN: nếu 1 crate transitive nào đó ghim cứng idna ở bản cũ,
+      # `cargo update` sẽ không vượt qua được — in ra đây để biết chính xác
+      # crate nào đang ghim, khỏi phải đoán.
+      - name: In cây dependency của idna (chẩn đoán nếu còn bị ghim bản cũ)
+        run: cargo tree -i idna --edges normal || true
+
       - name: Tự commit Cargo.lock nếu có thay đổi
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
