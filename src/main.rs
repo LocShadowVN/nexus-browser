@@ -90,7 +90,7 @@ mod state {
         pub hist: Vec<String>, pub hist_pos: usize,
         pub cfg: TabConfig, pub mode: TabMode,
         pub last_active: Instant,
-        pub frozen: bool, // TÍNH NĂNG ĐÓNG BĂNG TAB
+        pub frozen: bool,
         pub ai: AiCfg, pub ai_mem: VecDeque<(String, String)>,
         pub client: Option<reqwest::Client>,
         pub client_cfg_hash: u64,
@@ -190,7 +190,6 @@ mod state {
     impl State {
         pub fn new() -> Self {
             let tabs = vec![TabState::new(TabMode::Normal)];
-            
             Self {
                 active_tab: 0,
                 tabs,
@@ -268,14 +267,13 @@ mod state {
 }
 
 // ======================
-// MODULE: NET (SECURE & GOOGLE LOGIN)
+// MODULE: NET
 // ======================
 mod net {
     use super::*;
     pub fn build_client(c: &state::TabConfig) -> reqwest::Client {
         let jar = Arc::new(reqwest::cookie::Jar::default());
         let mut b = reqwest::Client::builder()
-            // SPOOFING: Giả mạo Chrome xịn nhất để qua mặt Google Login Block
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .cookie_provider(jar)
             .danger_accept_invalid_certs(false)
@@ -300,7 +298,7 @@ mod sinkhole {
 }
 
 // ======================
-// MODULE: INJECTION (YOUTUBE AD-KILLER & CSP)
+// MODULE: INJECTION
 // ======================
 mod injection {
     use super::*;
@@ -317,8 +315,6 @@ mod injection {
         
         if cfg.ad { 
             css.push_str(r#"[class*="ad-"],[id*="ad-"],.adsbygoogle,#google_ads,iframe[src*="doubleclick"],[class*="sponsor"],[id*="banner"],.ad-container,.adsbox{display:none!important;height:0!important;width:0!important;overflow:hidden!important}"#); 
-            
-            // YOUTUBE AD-KILLER JS
             js.push_str(r#"
             if (window.location.hostname.includes('youtube.com')) {
                 setInterval(() => {
@@ -400,17 +396,9 @@ mod injection {
             window.top.postMessage(JSON.stringify({a: 'new-tab-url', p: url}), '*');
             return null;
         };
-        
-        const oldLog = console.log;
-        console.log = function(...args) {
-            window.top.postMessage(JSON.stringify({a: 'console-log', p: args.join(' ')}), '*');
-            oldLog.apply(console, args);
-        };
         "#);
         
-        // BẢO MẬT: Content Security Policy (CSP)
-        let csp = r#"<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; object-src 'none';">"#;
-        let payload = format!(r#"{}<style id="nexus-shield-css">{}</style><script id="nexus-shield-js">{}</script>"#, csp, css, js);
+        let payload = format!(r#"<style id="nexus-shield-css">{}</style><script id="nexus-shield-js">{}</script>"#, css, js);
         PAYLOAD_CACHE.lock().unwrap().insert(hash, payload.clone());
         payload
     }
@@ -449,6 +437,7 @@ mod vault {
     }
     
     pub fn encrypt(data: &str, master: &str) -> Option<(String, String, String)> {
+        if master.is_empty() { return None; }
         let salt = SaltString::generate(rand::thread_rng());
         let mut raw_salt = [0u8; 64];
         let salt_bytes = salt.decode_b64(&mut raw_salt).ok()?;
@@ -468,32 +457,23 @@ mod vault {
     }
     
     pub fn decrypt(enc: &str, nonce: &str, salt: &str, master: &str) -> Option<String> {
-        let (ciphertext, nonce) = (
-            general_purpose::STANDARD.decode(enc).ok()?,
-            general_purpose::STANDARD.decode(nonce).ok()?,
-        );
+        let ciphertext = general_purpose::STANDARD.decode(enc).ok()?;
+        let nonce = general_purpose::STANDARD.decode(nonce).ok()?;
+        if nonce.len() != 12 { return None; }
         
         let salt_value = SaltString::from_b64(salt).ok()?;
         let mut raw_salt = [0u8; 64];
         let salt_bytes = salt_value.decode_b64(&mut raw_salt).ok()?;
         
-        (nonce.len() == 12).then(|| {
-            let key = derive_key(master, salt_bytes)?;
-            let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
-            String::from_utf8(cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_slice()).ok()?).ok()
-        })?
+        let key = derive_key(master, salt_bytes)?;
+        let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+        String::from_utf8(cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_slice()).ok()?).ok()
     }
     
     pub fn generate(len: usize) -> String {
-        const CHARSET: &[u8] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
         let mut rng = rand::thread_rng();
-        (0..len)
-            .map(|_| {
-                let idx = (rng.next_u32() as usize) % CHARSET.len();
-                CHARSET[idx] as char
-            })
-            .collect()
+        (0..len).map(|_| { let idx = (rng.next_u32() as usize) % CHARSET.len(); CHARSET[idx] as char }).collect()
     }
     
     pub fn load() -> Vec<state::VaultEntry> {
@@ -517,7 +497,6 @@ mod vault {
 // ======================
 mod sync {
     use super::*;
-    
     pub fn import_from_chrome() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
     pub fn import_from_firefox() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
     pub fn import_from_edge() -> Result<Vec<state::VaultEntry>, String> { Ok(Vec::new()) }
@@ -547,11 +526,8 @@ mod ai {
             t.client.clone().unwrap_or_else(reqwest::Client::new)
         };
         
-        let model = if ai.model.is_empty() { "gpt-4o-mini" } else { &ai.model } .to_string();
-        let mut messages: Vec<JsonValue> = history
-            .iter()
-            .map(|(r,c)| json!({"role":r,"content":c}))
-            .collect();
+        let model = if ai.model.is_empty() { "gpt-4o-mini" } else { &ai.model }.to_string();
+        let mut messages: Vec<JsonValue> = history.iter().map(|(r,c)| json!({"role":r,"content":c})).collect();
         messages.push(json!({"role":"user","content":prompt}));
         
         let body = json!({ "model": model, "messages": messages, "stream": false });
@@ -561,8 +537,7 @@ mod ai {
             .bearer_auth(&ai.key)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(serde_json::to_vec(&body).unwrap_or_default())
-            .send()
-            .await
+            .send().await
         {
             Ok(response) => match response.text().await {
                 Ok(text) => serde_json::from_str::<JsonValue>(&text)
@@ -603,10 +578,7 @@ mod dl {
         let (len, accept_ranges) = client.head(&url).send().await
             .ok()
             .map(|r| (r.content_length().unwrap_or(0), 
-                r.headers().get("accept-ranges")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|v| v.contains("bytes"))
-                    .unwrap_or(false)))
+                r.headers().get("accept-ranges").and_then(|v| v.to_str().ok()).map(|v| v.contains("bytes")).unwrap_or(false)))
             .unwrap_or((0, false));
         
         let f_name = url.split('/').next_back().filter(|s| !s.is_empty()).unwrap_or("nxdl.bin").to_string();
@@ -614,21 +586,16 @@ mod dl {
         
         if len == 0 || !accept_ranges {
             if let Ok(r) = client.get(&url).send().await {
-                if let Ok(b) = r.bytes().await {
-                    let _ = tokio::fs::write(&f_name, &b).await;
-                }
+                if let Ok(b) = r.bytes().await { let _ = tokio::fs::write(&f_name, &b).await; }
             }
             return;
         }
         
         let chunk = len.div_ceil(PARTS as u64);
-        
-        let file = match tokio::fs::OpenOptions::new()
-            .write(true).create(true).truncate(true)
-            .open(&f_name).await {
-                Ok(f) => Arc::new(TokioMutex::new(f)),
-                Err(_) => return,
-            };
+        let file = match tokio::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&f_name).await {
+            Ok(f) => Arc::new(TokioMutex::new(f)),
+            Err(_) => return,
+        };
         
         let (sem, failed) = (Arc::new(Semaphore::new(PARTS)), Arc::new(AtomicUsize::new(0)));
         let mut set = JoinSet::new();
@@ -642,25 +609,16 @@ mod dl {
                 if sem.acquire().await.is_err() { return; }
                 let response = client.get(&url).header("Range", format!("bytes={}-{}", s, e)).send().await;
                 if let Ok(response) = response {
-                    let bytes = response.bytes().await.ok();
-                    if let Some(bytes) = bytes {
+                    if let Some(bytes) = response.bytes().await.ok() {
                         let mut f = file.lock().await;
-                        if f.seek(std::io::SeekFrom::Start(s)).await.is_ok() {
-                            f.write_all(&bytes).await.ok();
-                        }
-                    } else {
-                        failed.fetch_add(1, Ordering::SeqCst);
-                    }
-                } else {
-                    failed.fetch_add(1, Ordering::SeqCst);
-                }
+                        if f.seek(std::io::SeekFrom::Start(s)).await.is_ok() { f.write_all(&bytes).await.ok(); }
+                    } else { failed.fetch_add(1, Ordering::SeqCst); }
+                } else { failed.fetch_add(1, Ordering::SeqCst); }
             });
         }
         
         while set.join_next().await.is_some() {}
-        if failed.load(Ordering::SeqCst) > 0 {
-            let _ = tokio::fs::remove_file(&f_name).await;
-        }
+        if failed.load(Ordering::SeqCst) > 0 { let _ = tokio::fs::remove_file(&f_name).await; }
     }
 }
 
@@ -689,9 +647,7 @@ mod extensions {
     
     #[derive(Debug, Clone, serde::Deserialize)]
     pub struct ExtensionManifest {
-        pub name: String,
-        pub version: String,
-        pub description: String,
+        pub name: String, pub version: String, pub description: String,
         pub permissions: Vec<String>,
         pub content_scripts: Option<Vec<ContentScript>>,
         pub background: Option<BackgroundScript>,
@@ -700,10 +656,8 @@ mod extensions {
     
     #[derive(Debug, Clone, serde::Deserialize)]
     pub struct ContentScript {
-        pub matches: Vec<String>,
-        pub js: Vec<String>,
-        pub css: Option<Vec<String>>,
-        pub run_at: Option<String>,
+        pub matches: Vec<String>, pub js: Vec<String>,
+        pub css: Option<Vec<String>>, pub run_at: Option<String>,
     }
     
     #[derive(Debug, Clone, serde::Deserialize)]
@@ -714,43 +668,24 @@ mod extensions {
     
     #[derive(Debug)]
     pub struct Extension {
-        pub id: String,
-        pub path: PathBuf,
-        pub manifest: ExtensionManifest,
-        pub enabled: bool,
+        pub id: String, pub path: PathBuf, pub manifest: ExtensionManifest, pub enabled: bool,
     }
     
     impl Extension {
         pub async fn load(id: &str) -> Result<Self, String> {
             let path = PathBuf::from(EXTENSIONS_DIR).join(id);
             let manifest_path = path.join(MANIFEST_FILE);
-            
-            let manifest_content = fs::read_to_string(&manifest_path)
-                .await
-                .map_err(|e| format!("Failed to read manifest: {}", e))?;
-                
-            let manifest: ExtensionManifest = serde_json::from_str(&manifest_content)
-                .map_err(|e| format!("Invalid manifest.json: {}", e))?;
-                
+            let manifest_content = fs::read_to_string(&manifest_path).await.map_err(|e| format!("Failed to read manifest: {}", e))?;
+            let manifest: ExtensionManifest = serde_json::from_str(&manifest_content).map_err(|e| format!("Invalid manifest.json: {}", e))?;
             let enabled = !path.join("DISABLED").exists();
-            Ok(Self {
-                id: id.to_string(),
-                path,
-                manifest,
-                enabled,
-            })
+            Ok(Self { id: id.to_string(), path, manifest, enabled })
         }
         
         pub async fn get_content_script_injection(&self, url: &str) -> Option<String> {
             if !self.enabled { return None; }
-            
             let scripts = self.manifest.content_scripts.as_ref()?
                 .iter()
-                .filter(|cs| 
-                    cs.matches.iter().any(|pattern| 
-                        url_matches_pattern(url, pattern)
-                    )
-                )
+                .filter(|cs| cs.matches.iter().any(|pattern| url_matches_pattern(url, pattern)))
                 .flat_map(|cs| cs.js.iter().map(|js| (js, cs.run_at.clone())))
                 .collect::<Vec<_>>();
                 
@@ -766,128 +701,70 @@ mod extensions {
                         Some("document_idle") => "document.readyState === 'complete'",
                         _ => "true",
                     };
-                    
-                    js_injection.push_str(&format!(
-                        r#"(function() {{
-                            if ({}) {{
-                                {}
-                            }}
-                            document.addEventListener('readystatechange', function() {{
-                                if ({}) {{
-                                    {}
-                                }}
-                            }});
-                        }})();"#,
-                        run_condition,
-                        js_content,
-                        run_condition,
-                        js_content
-                    ));
+                    js_injection.push_str(&format!(r#"(function(){{if({}){{{}}};document.addEventListener('readystatechange',function(){{if({}){{{}}}});}})();"#, run_condition, js_content, run_condition, js_content));
                 }
             }
-            
             Some(js_injection)
         }
         
         pub async fn get_css_injection(&self, url: &str) -> Option<String> {
             if !self.enabled { return None; }
-            
             let css_files = self.manifest.content_scripts.as_ref()?
                 .iter()
-                .filter(|cs| 
-                    cs.matches.iter().any(|pattern| 
-                        url_matches_pattern(url, pattern)
-                    )
-                )
+                .filter(|cs| cs.matches.iter().any(|pattern| url_matches_pattern(url, pattern)))
                 .flat_map(|cs| cs.css.as_deref().unwrap_or(&[]).iter())
                 .collect::<Vec<_>>();
                 
             if css_files.is_empty() { return None; }
-            
             let mut css_injection = String::new();
             for css_file in css_files {
                 let css_path = self.path.join(css_file);
-                if let Ok(css_content) = fs::read_to_string(&css_path).await {
-                    css_injection.push_str(&css_content);
-                }
+                if let Ok(css_content) = fs::read_to_string(&css_path).await { css_injection.push_str(&css_content); }
             }
-            
             Some(css_injection)
         }
         
         pub async fn get_background_script(&self) -> Option<String> {
             if !self.enabled { return None; }
-            
             let bg_script = match &self.manifest.background {
                 Some(bg) => {
-                    if let Some(worker) = &bg.service_worker {
-                        Some(self.path.join(worker))
-                    } else if let Some(scripts) = &bg.scripts {
-                        scripts.first().map(|first_script| self.path.join(first_script))
-                    } else {
-                        None
-                    }
+                    if let Some(worker) = &bg.service_worker { Some(self.path.join(worker)) }
+                    else if let Some(scripts) = &bg.scripts { scripts.first().map(|first_script| self.path.join(first_script)) }
+                    else { None }
                 }
                 None => None,
             };
-            
-            match bg_script {
-                Some(path) => fs::read_to_string(&path).await.ok(),
-                None => None,
-            }
+            match bg_script { Some(path) => fs::read_to_string(&path).await.ok(), None => None }
         }
     }
     
     fn url_matches_pattern(url: &str, pattern: &str) -> bool {
         if pattern == "<all_urls>" { return true; }
-        
-        // FIXED: thứ tự cũ là "*"->".*" rồi mới escape "." — điều này escape
-        // luôn dấu "." vừa được chèn vào từ ".*", làm sai nghĩa glob "*".
-        // Phải escape dấu "." literal TRƯỚC, rồi mới biến "*" thành ".*".
-        let pattern = pattern
-            .replace('.', r"\.")
-            .replace('*', ".*");
-            
-        Regex::new(&pattern)
-            .map(|re| re.is_match(url))
-            .unwrap_or(false)
+        let pattern = pattern.replace('.', r"\.").replace('*', ".*");
+        Regex::new(&pattern).map(|re| re.is_match(url)).unwrap_or(false)
     }
     
     pub async fn load_all_extensions() -> Vec<Extension> {
         let mut extensions = Vec::new();
-        
         if let Ok(entries) = fs::read_dir(EXTENSIONS_DIR).await {
             let mut stream = entries;
             while let Some(entry) = stream.next_entry().await.ok().flatten() {
-                let path = if entry.file_type().await.ok().map(|ft| ft.is_dir()).unwrap_or(false) {
-                    entry.path()
-                } else {
-                    continue;
-                };
+                let path = if entry.file_type().await.ok().map(|ft| ft.is_dir()).unwrap_or(false) { entry.path() } else { continue; };
                 if let Some(id) = path.file_name().and_then(|s| s.to_str()) {
-                    if let Ok(ext) = Extension::load(id).await {
-                        extensions.push(ext);
-                    }
+                    if let Ok(ext) = Extension::load(id).await { extensions.push(ext); }
                 }
             }
         }
-        
         extensions
     }
     
     pub async fn get_injections_for_url(url: &str, extensions: &[Extension]) -> (Option<String>, Option<String>) {
         let mut js_injections = Vec::new();
         let mut css_injections = Vec::new();
-        
         for ext in extensions {
-            if let Some(js) = ext.get_content_script_injection(url).await {
-                js_injections.push(js);
-            }
-            if let Some(css) = ext.get_css_injection(url).await {
-                css_injections.push(css);
-            }
+            if let Some(js) = ext.get_content_script_injection(url).await { js_injections.push(js); }
+            if let Some(css) = ext.get_css_injection(url).await { css_injections.push(css); }
         }
-        
         (
             if js_injections.is_empty() { None } else { Some(js_injections.join("\n")) },
             if css_injections.is_empty() { None } else { Some(css_injections.join("\n")) }
@@ -896,25 +773,14 @@ mod extensions {
     
     pub mod api {
         use super::*;
-        
         pub fn setup_extension_apis(webview: &wry::WebView) {
             webview.evaluate_script(r#"
                 if (typeof chrome === 'undefined') {
                     window.chrome = {
                         runtime: {
-                            getManifest: function() {
-                                return {
-                                    name: "Nexus Browser",
-                                    version: "1.0",
-                                };
-                            },
+                            getManifest: function() { return { name: "Nexus Browser", version: "1.0" }; },
                             sendMessage: function(message, responseCallback) {
-                                if (window.ipc) {
-                                    window.ipc.postMessage(JSON.stringify({
-                                        a: 'ext-msg',
-                                        p: message
-                                    }));
-                                }
+                                if (window.ipc) { window.ipc.postMessage(JSON.stringify({ a: 'ext-msg', p: message })); }
                             }
                         }
                     };
@@ -932,428 +798,246 @@ mod autoconfig {
     
     pub fn detect_warp() -> bool {
         #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("sc")
-                .args(&["query", "CloudflareWARP"])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
-        
+        { std::process::Command::new("sc").args(["query", "CloudflareWARP"]).output().map(|o| o.status.success()).unwrap_or(false) }
         #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("launchctl")
-                .args(&["list", "com.cloudflare.1.1.1.1"])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
-        
+        { std::process::Command::new("launchctl").args(["list", "com.cloudflare.1.1.1.1"]).output().map(|o| o.status.success()).unwrap_or(false) }
         #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("systemctl")
-                .args(["is-active", "cloudflare-warp"])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
+        { std::process::Command::new("systemctl").args(["is-active", "cloudflare-warp"]).output().map(|o| o.status.success()).unwrap_or(false) }
     }
     
-    pub fn detect_tor() -> bool {
-        std::net::TcpStream::connect("127.0.0.1:9050").is_ok()
-    }
-    
-    pub fn update_ui(px: &tao::event_loop::EventLoopProxy<Ev>) {
-        let warp_detected = detect_warp();
-        let tor_detected = detect_tor();
-        
-        let _ = px.send_event(Ev::Js(format!(
-            "document.getElementById('warp-toggle').checked = {}; \
-             document.getElementById('tor-toggle').checked = {};",
-            warp_detected, tor_detected
-        )));
+    pub async fn detect_tor() -> bool {
+        tokio::net::TcpStream::connect("127.0.0.1:9050").await.is_ok()
     }
 }
 
 // ======================
-// MAIN HTML (UI)
+// MAIN HTML (UI BROWSER STYLE)
 // ======================
 fn html() -> String {
     r###"<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;transition:background 0.3s, color 0.3s;}
-:root{--bg:#000;--panel:#0a0a0a;--input:#111;--brd:#00ffff;--acc:#ff007f;--t1:#f8fafc;--t2:#94a3b8}
-body.light{--bg:#f0f2f5;--panel:#ffffff;--input:#e4e6eb;--brd:#005f73;--acc:#b7094c;--t1:#1c1e21;--t2:#606770}
-body.incognito{--brd:#9d4edd;--acc:#9d4edd}body.tor{--brd:#0d6efd;--acc:#0d6efd}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+:root{--bg:#dee1e6;--panel:#ffffff;--input:#f1f3f4;--brd:#dadce0;--acc:#1a73e8;--t1:#202124;--t2:#5f6368;--t3:#80868b}
+body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
-header{display:flex;align-items:center;gap:8px;padding:10px;background:var(--panel);border-bottom:1px solid var(--brd)}
-.btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:1px solid var(--brd);background:0 0;color:var(--t1);cursor:pointer;border-radius:6px;transition:0.2s}
-.btn:hover{background:var(--brd);color:var(--bg)}
-.btn-acc{border-color:var(--acc);color:var(--acc)}.btn-acc:hover{background:var(--acc);color:#fff}
-#url{flex:1;background:var(--input);border:1px solid var(--brd);color:var(--t1);padding:10px 14px;outline:0;border-radius:6px}
-#workspace{display:flex;flex:1;overflow:hidden;background:#fff}
-aside{width:320px;background:var(--panel);border-left:1px solid var(--brd);display:flex;flex-direction:column;overflow:hidden}
-.side-hd{padding:18px;border-bottom:1px solid var(--brd);font-weight:700;color:var(--brd);letter-spacing:2px;font-size:14px}
-.side-scroll{flex:1;overflow-y:auto;padding:20px}
-.sec-title{font-size:.8rem;color:var(--acc);margin:20px 0 12px;letter-spacing:2px;border-bottom:1px dashed var(--acc);padding-bottom:6px;font-weight:700;text-transform:uppercase}
-.row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:.85rem;color:var(--t1);font-weight:500}
-.sw{position:relative;width:40px;height:20px}.sw input{opacity:0;width:0;height:0}
-.sl{position:absolute;cursor:pointer;inset:0;background:var(--input);border:1px solid var(--t2);transition:.3s;border-radius:20px}
-.sl:before{position:absolute;content:"";height:14px;width:14px;left:2px;bottom:2px;background:var(--t2);border-radius:50%}
-input:checked+.sl{background:var(--brd);border-color:var(--brd)}
-input:checked+.sl:before{transform:translateX(20px);background:var(--bg)}
-.stat{font-size:1.5rem;color:var(--brd);font-weight:800;text-align:center;margin:10px 0}
-#dp{position:fixed;right:-400px;top:0;width:400px;height:100vh;background:var(--panel);border-left:2px solid var(--acc);z-index:99;padding:20px;overflow-y:auto;transition:right .3s}
-#dp.o{right:0}.le{font-size:12px;margin-bottom:5px;word-break:break-all}.le.error{color:var(--acc)}.le.info{color:var(--brd)}
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border:2px solid var(--brd);padding:30px;z-index:1000;display:none;border-radius:12px}
+
+/* TABS BAR */
+#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent}
+.tab{display:flex;align-items:center;max-width:220px;min-width:120px;height:32px;margin:0 2px;padding:0 12px;border-radius:8px 8px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;overflow:hidden;transition:background 0.2s}
+.tab:hover{background:rgba(0,0,0,0.05)}
+.tab.active{background:var(--panel);color:var(--t1)}
+.tab.frozen{opacity:0.6;font-style:italic}
+.tab-title{flex:1;overflow:hidden;text-overflow:ellipsis;margin-right:8px;font-size:13px}
+.tab-close{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:var(--t3);font-size:16px}
+.tab-close:hover{background:rgba(0,0,0,0.1);color:var(--t1)}
+#new-tab-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
+#new-tab-btn:hover{background:rgba(0,0,0,0.05)}
+
+/* TOOLBAR */
+#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd)}
+.nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
+.nav-btn:hover{background:var(--input)}
+#url-bar{flex:1;height:36px;background:var(--input);border:1px solid transparent;border-radius:18px;padding:0 16px;font-size:14px;color:var(--t1);outline:none;transition:box-shadow 0.2s}
+#url-bar:focus{background:var(--panel);box-shadow:0 1px 6px rgba(32,33,36,0.28);border-color:var(--brd)}
+.tool-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;font-size:16px}
+.tool-btn:hover{background:var(--input)}
+
+/* WORKSPACE */
+#workspace{flex:1;background:#fff;overflow:hidden;position:relative}
+iframe{width:100%;height:100%;border:none}
+
+/* SIDEBAR MENU */
+#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:100;overflow-y:auto;transition:right 0.3s}
+#sidebar.open{right:0}
+.sidebar-header{padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
+.sidebar-section{padding:12px 20px}
+.section-title{font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;font-weight:600}
+.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px}
+.switch{position:relative;width:36px;height:20px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;inset:0;background:var(--brd);transition:.3s;border-radius:20px}
+.slider:before{position:absolute;content:"";height:14px;width:14px;left:3px;bottom:3px;background:#fff;transition:.3s;border-radius:50%}
+input:checked+.slider{background:var(--acc)}
+input:checked+.slider:before{transform:translateX(16px)}
+
+/* MODALS */
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);z-index:1000;display:none;padding:24px}
 .modal.show{display:block}
-.v-in{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);color:var(--t1);border-radius:6px;outline:0}
-.v-btn{width:100%;padding:10px;margin:5px 0;background:var(--brd);color:var(--bg);border:0;cursor:pointer;font-weight:700;border-radius:6px}
-.v-btn:hover{background:var(--acc);color:#fff}
-#ai-log{margin-top:12px;max-height:200px;overflow-y:auto;font-size:13px;text-align:left}
-.ai-msg{margin:6px 0;padding:8px;border-radius:6px;background:var(--input)}
-.ai-msg.u{border-left:3px solid var(--acc)}.ai-msg.a{border-left:3px solid var(--brd)}
-#tabs{display:flex;gap:4px;padding:0 10px;height:40px;align-items:center;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--brd)}
-.tab{padding:6px 16px;border-radius:6px 6px 0 0;cursor:pointer;background:var(--input);color:var(--t1);white-space:nowrap;position:relative;display:flex;align-items:center;gap:6px;}
-.tab.active{background:var(--panel);color:var(--brd);border-top:2px solid var(--brd)}
-.tab.frozen{opacity:0.6; font-style:italic;}
-.tab-close{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;border-radius:50%;color:var(--t2)}
-.tab-close:hover{background:var(--brd);color:var(--bg)}
-#sidebar{position:fixed;right:-320px;top:0;width:320px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);transition:right .3s;z-index:100;overflow-y:auto}
-#sidebar-toggle{position:fixed;right:0;top:10px;width:24px;height:40px;background:var(--brd);color:var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:101;border-radius:6px 0 0 6px}
-#sidebar-toggle:hover{transform:translateX(-5px)}
-#sidebar.o{right:0}
-#password-suggestion{position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--brd);border-radius:8px;padding:15px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:2000;max-width:400px;display:none}
-.p-suggest-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.p-suggest-title{font-weight:600;color:var(--brd)}
-.p-suggest-close{background:0 0;border:0;color:var(--t2);cursor:pointer;font-size:1.2rem}
-.p-suggest-content{margin-bottom:15px}
-.p-suggest-pass{background:var(--input);border:1px solid var(--brd);border-radius:6px;padding:8px 12px;margin:8px 0;font-family:monospace}
-.p-suggest-actions{display:flex;gap:8px}
-.p-suggest-btn{flex:1;padding:8px;border:0;border-radius:6px;cursor:pointer;font-weight:500}
-.p-suggest-btn.save{background:var(--brd);color:var(--bg)}
-.p-suggest-btn.generate{background:var(--input);color:var(--brd)}
-#extensions-list{display:flex;flex-direction:column;gap:15px}
-.extension{padding:15px;background:var(--input);border-radius:8px}
-.extension-header{display:flex;gap:10px;align-items:center;margin-bottom:10px}
-.extension-icon{width:40px;height:40px;background:var(--panel);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700}
-.extension-name{font-weight:600;color:var(--brd)}
-.extension-version{color:var(--t2);font-size:0.85rem}
-.extension-description{color:var(--t2);margin-bottom:10px}
-.extension-actions{display:flex;gap:10px}
-.extension-toggle{width:40px;height:20px;position:relative}
-.extension-toggle input{opacity:0;width:0;height:0}
-.extension-toggle .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--input);border:1px solid var(--t2);transition:.3s;border-radius:20px}
-.extension-toggle .slider:before{position:absolute;content:"";height:14px;width:14px;left:2px;bottom:2px;background:var(--t2);transition:.3s;border-radius:50%}
-.extension-toggle input:checked + .slider{background:var(--brd);border-color:var(--brd)}
-.extension-toggle input:checked + .slider:before{transform:translateX(20px);background:var(--bg)}
-.ext-btn { background: var(--input); border: 1px solid var(--brd); color: var(--brd); padding: 8px; width: 100%; border-radius: 6px; cursor: pointer; margin-top: 10px; font-weight: bold; }
-.ext-btn:hover { background: var(--brd); color: var(--bg); }
+.modal-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--t1)}
+.modal-input{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);border-radius:4px;color:var(--t1);outline:none;font-size:14px}
+.modal-input:focus{border-color:var(--acc);background:#fff}
+.modal-btn{width:100%;padding:10px;margin:4px 0;background:var(--panel);border:1px solid var(--brd);color:var(--t1);cursor:pointer;font-weight:500;border-radius:4px;font-size:14px}
+.modal-btn:hover{background:var(--input)}
+.modal-btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.modal-btn.primary:hover{background:#1557b0}
+
+/* TOAST / DEV CONSOLE */
+#dev-console{position:fixed;bottom:0;right:0;width:400px;height:200px;background:rgba(0,0,0,0.8);color:#0f0;border-radius:8px 0 0 0;padding:10px;font-size:12px;z-index:99;display:none;overflow-y:auto}
+#dev-console.show{display:block}
+.log-entry{margin-bottom:4px;word-break:break-all}
+
+/* PASSWORD POPUP */
+#pass-popup{position:fixed;bottom:20px;right:20px;width:320px;background:var(--panel);border:1px solid var(--brd);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:2000;padding:16px;display:none}
+.popup-header{display:flex;justify-content:space-between;margin-bottom:12px}
+.popup-title{font-weight:600;font-size:14px}
+.popup-close{cursor:pointer;color:var(--t3);font-size:18px}
+.popup-domain{font-size:13px;color:var(--t2);margin-bottom:8px}
+.popup-pass{font-family:monospace;background:var(--input);padding:8px;border-radius:4px;margin-bottom:12px;font-size:13px}
+.popup-actions{display:flex;gap:8px}
+.popup-btn{flex:1;padding:8px;border:1px solid var(--brd);background:#fff;border-radius:4px;cursor:pointer;font-size:13px}
+.popup-btn.primary{background:var(--acc);color:#fff;border:none}
 </style></head><body>
 <div id="app">
-  <div id="tabs"></div>
-  <header>
-    <button class="btn" onclick="sr('back')">⟵</button>
-    <button class="btn" onclick="sr('fwd')">⟶</button>
-    <button class="btn" onclick="sr('ref')">⟳</button>
-    <input type="text" id="url" data-i18n-placeholder="search_ph" placeholder="Search or enter address" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
-    <button class="btn" onclick="sr('nav', 'https://accounts.google.com')" title="Google Login">G</button>
-    <button class="btn" onclick="sr('bookmark', v('url'))" title="Bookmark">⭐</button>
-    <button class="btn" onclick="toggleModal('vault')" title="Vault">🔐</button>
-    <button class="btn" onclick="toggleModal('aip')" title="AI Assistant">🤖</button>
-    <button class="btn" onclick="document.getElementById('dp').classList.toggle('o')" title="Dev Console">💻</button>
-    <button class="btn" onclick="toggleTheme()" title="Toggle Theme" id="theme-btn">🌙</button>
-    <button class="btn" onclick="toggleLang()" title="Language" id="lang-btn">🇻🇳</button>
-    <button class="btn btn-acc" onclick="sr('new-tab', 'normal')" data-i18n="new_tab">+ Tab</button>
-    <button class="btn" id="sidebar-toggle">≡</button>
-  </header>
-  <div id="workspace"></div>
-  <div id="dp"><h2 style="color:var(--acc);border-bottom:1px solid var(--acc)">DEV CONSOLE</h2><div id="dl"></div></div>
+  <div id="tabs-bar"></div>
+  
+  <div id="toolbar">
+    <button class="nav-btn" onclick="sr('back')">←</button>
+    <button class="nav-btn" onclick="sr('fwd')">→</button>
+    <button class="nav-btn" onclick="sr('ref')">⟳</button>
+    <input type="text" id="url-bar" placeholder="Tìm kiếm Google hoặc nhập URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" title="Lưu trang">★</button>
+    <button class="tool-btn" onclick="toggleModal('vault')" title="Kho mật khẩu">🔑</button>
+    <button class="tool-btn" onclick="toggleModal('ai-modal')" title="Trợ lý AI">🤖</button>
+    <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" title="Console">💻</button>
+    <button class="tool-btn" onclick="toggleSidebar()" title="Menu">≡</button>
+  </div>
 
+  <div id="workspace"></div>
+  <div id="dev-console"></div>
+  
   <div id="sidebar">
-    <div style="padding:20px 0;text-align:center">
-      <div style="font-size:1.5rem;margin-bottom:10px">≡</div>
-      <div style="font-weight:600;margin-bottom:20px;color:var(--brd)">NEXUS MENU</div>
-      <div class="row" style="margin-bottom:15px"><button class="btn btn-acc" style="width:100%" onclick="sr('new-tab', 'normal')" data-i18n="new_tab">+ New Tab</button></div>
-      <div class="row" style="margin-bottom:15px"><button class="btn" style="width:100%" onclick="sr('new-tab', 'incognito')" data-i18n="private_tab">+ Private Tab</button></div>
-      <div class="row" style="margin-bottom:15px"><button class="btn" style="width:100%" onclick="sr('new-tab', 'tor')" data-i18n="tor_tab">+ Tor Tab</button></div>
+    <div class="sidebar-header">Cài đặt Nexus</div>
+    <div class="sidebar-section">
+      <div class="section-title">Kết nối</div>
+      <div class="row"><span>Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Mạng Tor</span><label class="switch"><input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)"><span class="slider"></span></label></div>
     </div>
-    
-    <div class="side-hd" data-i18n="security">🛡 SECURITY</div>
-    <div class="side-scroll">
-      <div class="sec-title" data-i18n="connection">CONNECTION</div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Cloudflare WARP</span>
-        <label class="sw">
-          <input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Tor Network</span>
-        <label class="sw">
-          <input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      
-      <div class="sec-title" data-i18n="shields">SHIELDS</div>
-      <div class="row"><span>Adblock (Inc. YouTube)</span><label class="sw"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="sl"></span></label></div>
-      <div class="row"><span>Tracker Block</span><label class="sw"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="sl"></span></label></div>
-      <div class="row"><span>Cookie Shield</span><label class="sw"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="sl"></span></label></div>
-      <div class="row"><span>Domain Sinkhole</span><label class="sw"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="sl"></span></label></div>
-      <div class="row"><span>Anti-Fingerprint</span><label class="sw"><input type="checkbox" checked onchange="ts('anti_fp',this.checked)"><span class="sl"></span></label></div>
-      
-      <div class="sec-title">PASSWORDS</div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Auto Save</span>
-        <label class="sw">
-          <input type="checkbox" checked onchange="ts('auto-save',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Password Suggest</span>
-        <label class="sw">
-          <input type="checkbox" checked onchange="ts('pass-suggest',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      
-      <div class="sec-title">EXTENSIONS</div>
-      <div id="extensions-list"></div>
-      <p style="font-size:12px; color:var(--t2); margin-top:10px;">Native .crx install is not supported. Use custom JS extensions.</p>
-      <button class="ext-btn" onclick="sr('nav', 'https://chrome.google.com/webstore')">🌐 Open Chrome Web Store</button>
-      
-      <div class="sec-title">SYNC</div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Chrome</span>
-        <label class="sw">
-          <input type="checkbox" onchange="ts('sync-chrome',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Firefox</span>
-        <label class="sw">
-          <input type="checkbox" onchange="ts('sync-firefox',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      <div class="row" style="margin-bottom:15px">
-        <span>Edge</span>
-        <label class="sw">
-          <input type="checkbox" onchange="ts('sync-edge',this.checked)">
-          <span class="sl"></span>
-        </label>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="v-btn" onclick="sr('sync-now')">SYNC NOW</button>
-      </div>
-      
-      <div class="sec-title" data-i18n="stats">STATS</div>
-      <div class="stat" id="tc">0 Blocked</div>
+    <div class="sidebar-section">
+      <div class="section-title">Bảo vệ</div>
+      <div class="row"><span>Chặn Quảng cáo</span><label class="switch"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Chàn Tracker</span><label class="switch"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Bảo vệ Cookie</span><label class="switch"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Chặn Domain</span><label class="switch"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Anti-Fingerprint</span><label class="switch"><input type="checkbox" checked onchange="ts('anti_fp',this.checked)"><span class="slider"></span></label></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Mật khẩu</div>
+      <div class="row"><span>Tự động lưu</span><label class="switch"><input type="checkbox" checked onchange="ts('auto-save',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Gợi ý mật khẩu</span><label class="switch"><input type="checkbox" checked onchange="ts('pass-suggest',this.checked)"><span class="slider"></span></label></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Đồng bộ hóa</div>
+      <div class="row"><span>Chrome</span><label class="switch"><input type="checkbox" onchange="ts('sync-chrome',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Firefox</span><label class="switch"><input type="checkbox" onchange="ts('sync-firefox',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span>Edge</span><label class="switch"><input type="checkbox" onchange="ts('sync-edge',this.checked)"><span class="slider"></span></label></div>
+      <button class="modal-btn primary" onclick="sr('sync-now')">Đồng bộ ngay</button>
     </div>
   </div>
 
   <div id="vault" class="modal">
-    <h2 style="color:var(--brd);margin-bottom:15px" data-i18n="vault_title">🔐 NEXUS VAULT</h2>
-    <input type="password" id="v-master" class="v-in" placeholder="Master Password">
-    <input type="text" id="v-domain" class="v-in" placeholder="Domain">
-    <input type="text" id="v-user" class="v-in" placeholder="Username">
-    <input type="password" id="v-pass" class="v-in" placeholder="Password">
-    <button class="v-btn" onclick="vAct('save')" data-i18n="save">SAVE</button>
-    <button class="v-btn" onclick="vAct('get')" data-i18n="retrieve">RETRIEVE</button>
-    <button class="v-btn" onclick="vAct('gen')">GENERATE</button>
-    <button class="v-btn" onclick="toggleModal('vault')" style="background:var(--acc);color:#fff" data-i18n="close">CLOSE</button>
-    <div id="v-res" style="margin-top:10px;font-size:12px;color:var(--brd)"></div>
+    <div class="modal-title">Kho Mật Khẩu</div>
+    <input type="password" id="v-master" class="modal-input" placeholder="Mật khẩu chính (Master Password)">
+    <input type="text" id="v-domain" class="modal-input" placeholder="Tên miền">
+    <input type="text" id="v-user" class="modal-input" placeholder="Tên đăng nhập">
+    <input type="password" id="v-pass" class="modal-input" placeholder="Mật khẩu">
+    <button class="modal-btn primary" onclick="vAct('save')">Lưu</button>
+    <button class="modal-btn" onclick="vAct('get')">Lấy mật khẩu</button>
+    <button class="modal-btn" onclick="vAct('gen')">Tạo mật khẩu</button>
+    <button class="modal-btn" onclick="toggleModal('vault')">Đóng</button>
+    <div id="v-res" style="margin-top:12px;font-size:13px;color:var(--t2)"></div>
   </div>
 
-  <div id="aip" class="modal">
-    <h2 style="color:var(--brd);margin-bottom:15px">🤖 AI Assistant</h2>
-    <input type="text" id="ai-endpoint" class="v-in" placeholder="Endpoint">
-    <input type="password" id="ai-key" class="v-in" placeholder="API Key">
-    <input type="text" id="ai-model" class="v-in" placeholder="Model">
-    <button class="v-btn" onclick="aiCfg()" data-i18n="save">SAVE</button>
-    <textarea id="ai-prompt" class="v-in" rows="3" placeholder="Ask AI..."></textarea>
-    <button class="v-btn" onclick="aiAsk()">ASK</button>
-    <button class="v-btn" onclick="toggleModal('aip')" style="background:var(--acc);color:#fff" data-i18n="close">CLOSE</button>
-    <div id="ai-log"></div>
+  <div id="ai-modal" class="modal">
+    <div class="modal-title">Trợ lý AI</div>
+    <input type="text" id="ai-endpoint" class="modal-input" placeholder="API Endpoint">
+    <input type="password" id="ai-key" class="modal-input" placeholder="API Key">
+    <input type="text" id="ai-model" class="modal-input" placeholder="Model (vd: gpt-4o-mini)">
+    <button class="modal-btn primary" onclick="aiCfg()">Lưu cấu hình</button>
+    <textarea id="ai-prompt" class="modal-input" rows="3" placeholder="Nhập câu hỏi..."></textarea>
+    <button class="modal-btn" onclick="aiAsk()">Hỏi AI</button>
+    <div id="ai-log" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:13px"></div>
+    <button class="modal-btn" onclick="toggleModal('ai-modal')">Đóng</button>
   </div>
-  
-  <div id="password-suggestion">
-    <div class="p-suggest-header">
-      <div class="p-suggest-title">Save Password?</div>
-      <button class="p-suggest-close" onclick="hidePasswordSuggestion()">&times;</button>
+
+  <div id="pass-popup">
+    <div class="popup-header">
+      <div class="popup-title">Lưu mật khẩu?</div>
+      <span class="popup-close" onclick="hidePassPopup()">&times;</span>
     </div>
-    <div class="p-suggest-content">
-      <div>Save for <span id="suggest-domain" style="font-weight:600"></span>?</div>
-      <div class="p-suggest-pass" id="suggest-password"></div>
-    </div>
-    <div class="p-suggest-actions">
-      <button class="p-suggest-btn save" onclick="savePasswordSuggestion()">Save</button>
-      <button class="p-suggest-btn generate" onclick="generateStrongPassword()">Generate</button>
+    <div class="popup-domain" id="suggest-domain"></div>
+    <div class="popup-pass" id="suggest-pass"></div>
+    <div class="popup-actions">
+      <button class="popup-btn primary" onclick="savePassPopup()">Lưu</button>
+      <button class="popup-btn" onclick="genPassPopup()">Tạo mới</button>
     </div>
   </div>
 </div>
 <script>
-// --- ĐA NGÔN NGỮ (i18n) ---
-const dict = {
-  en: {
-    search_ph: "Search Google or type URL...", new_tab: "+ Tab", private_tab: "+ Private Tab", tor_tab: "+ Tor Tab",
-    security: "🛡 SECURITY", connection: "CONNECTION", shields: "SHIELDS", stats: "STATS",
-    vault_title: "🔐 NEXUS VAULT", save: "SAVE", retrieve: "RETRIEVE", close: "CLOSE"
-  },
-  vi: {
-    search_ph: "Tìm kiếm hoặc nhập URL...", new_tab: "+ Tab Mới", private_tab: "+ Tab Ẩn Danh", tor_tab: "+ Tab Tor",
-    security: "🛡 BẢO MẬT", connection: "KẾT NỐI", shields: "LÁ CHẮN", stats: "THỐNG KÊ",
-    vault_title: "🔐 KHO LƯU TRỮ", save: "LƯU", retrieve: "LẤY MẬT KHẨU", close: "ĐÓNG"
-  }
-};
-let lang = localStorage.getItem('nexus_lang') || 'en';
-let theme = localStorage.getItem('nexus_theme') || 'dark';
-
-function applyLang() {
-  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = dict[lang][el.getAttribute('data-i18n')]; });
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = dict[lang][el.getAttribute('data-i18n-placeholder')]; });
-  document.getElementById('lang-btn').textContent = lang === 'en' ? '🇻🇳' : '🇬🇧';
-}
-function toggleLang() { lang = lang === 'en' ? 'vi' : 'en'; localStorage.setItem('nexus_lang', lang); applyLang(); }
-
-function applyTheme() {
-  if(theme === 'light') { document.body.classList.add('light'); document.getElementById('theme-btn').textContent = '☀️'; }
-  else { document.body.classList.remove('light'); document.getElementById('theme-btn').textContent = '🌙'; }
-}
-function toggleTheme() { theme = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('nexus_theme', theme); applyTheme(); }
-
-applyLang(); applyTheme();
-
-let tabs = [{id:'home',name:'Home',url:'nexus://home',mode:'normal', frozen: false}];
+let tabs = [{name:'New Tab', url:'nexus://home', frozen:false}];
 let activeTab = 0;
-let extensions = [];
+let currentMasterPass = '';
 
-function initTabs() { renderTabs(); }
 function renderTabs() {
-  document.getElementById('tabs').innerHTML = tabs.map((t,i)=>`
+  document.getElementById('tabs-bar').innerHTML = tabs.map((t,i)=>`
     <div class="tab ${i===activeTab?'active':''} ${t.frozen?'frozen':''}" onclick="switchTab(${i})">
-      ${t.frozen ? '❄️ ' : ''}${t.name}
+      <span class="tab-title">${t.frozen?'❄ ':''}${t.name}</span>
       <span class="tab-close" onclick="closeTab(${i},event)">&times;</span>
-    </div>`).join('');
+    </div>`).join('') + `<div id="new-tab-btn" onclick="newTab('normal')">+</div>`;
 }
-
 function newTab(m) { sr('new-tab',m); }
-function closeTab(i,e) { e.stopPropagation(); tabs.length>1 && sr('close-tab',i); }
-function switchTab(i) { 
-  if(i!==activeTab) {
-    if(tabs[i].frozen) { sr('unfreeze-tab', i); }
-    else { activeTab=i; sr('switch-tab',i); renderTabs(); }
-  }
-}
+function closeTab(i,e) { e.stopPropagation(); if(tabs.length>1) sr('close-tab',i); }
+function switchTab(i) { sr('switch-tab',i); }
 
 function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
-function uc(c){document.getElementById('tc').textContent=c+(lang==='vi'?' Đã chặn':' Blocked')}
+function v(id){return document.getElementById(id).value}
 function toggleModal(id){document.getElementById(id).classList.toggle('show')}
-function setUrl(u){document.getElementById('url').value=u}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+function lg(m,t){const c=document.getElementById('dev-console');c.innerHTML=`<div class="log-entry">[${new Date().toLocaleTimeString()}] ${m}</div>`+c.innerHTML}
 function vAct(a){sr('vault',{a,m:v('v-master'),d:v('v-domain'),u:v('v-user'),p:v('v-pass')})}
 function vRes(t){document.getElementById('v-res').textContent=t}
 function aiCfg(){sr('ai_cfg',{e:v('ai-endpoint'),k:v('ai-key'),m:v('ai-model')})}
-function aiAsk(){const q=v('ai-prompt');q&&(addAi('u',q),sr('ai',q),document.getElementById('ai-prompt').value='')}
-function addAi(r,t){const l=document.getElementById('ai-log');l.innerHTML+=`<div class="ai-msg ${r}">${r==='u'?'You':'AI'}: ${t}</div>`;l.scrollTop=l.scrollHeight}
-function lg(m,t){const l=document.getElementById('dl');l.innerHTML=`<div class="le ${t||'info'}">[${new Date().toTimeString().split(' ')[0]}] ${m}</div>`+l.innerHTML}
-function v(id){return document.getElementById(id).value}
+function aiAsk(){const q=v('ai-prompt');if(q){sr('ai',q);document.getElementById('ai-prompt').value=''}}
+function addAi(t){document.getElementById('ai-log').innerHTML+=`<div style="margin:4px 0;padding:6px;background:#f1f3f4;border-radius:4px">${t}</div>`}
 
-document.getElementById('v-master').addEventListener('input',e=>setTimeout(()=>e.target.value='',5000));
-document.getElementById('sidebar-toggle').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('o'));
-
-function showPasswordSuggestion(d) {
+function showPassPopup(d) {
   document.getElementById('suggest-domain').textContent = new URL(d.url).hostname;
-  document.getElementById('suggest-password').textContent = '•'.repeat(d.password.length);
-  document.getElementById('password-suggestion').style.display = 'block';
+  document.getElementById('suggest-pass').textContent = '•'.repeat(d.password.length);
+  window.passData = d;
+  document.getElementById('pass-popup').style.display = 'block';
 }
-
-function hidePasswordSuggestion() { document.getElementById('password-suggestion').style.display = 'none'; }
-function savePasswordSuggestion() { 
-  if (window.passwordSuggestionData) {
-    sr('save-password', window.passwordSuggestionData);
-    hidePasswordSuggestion();
+function hidePassPopup() { document.getElementById('pass-popup').style.display = 'none'; }
+function savePassPopup() {
+  if (window.passData) {
+    if (!currentMasterPass) {
+      alert('Vui lòng nhập Master Password trong Vault trước khi lưu!');
+      toggleModal('vault');
+      return;
+    }
+    sr('save-password', {url: window.passData.url, username: window.passData.username, password: window.passData.password, master: currentMasterPass});
+    hidePassPopup();
   }
 }
-function generateStrongPassword() {
-  if (window.passwordSuggestionData) {
+function genPassPopup() {
+  if (window.passData) {
     const p = window.nexusGeneratePassword(16);
-    document.getElementById('suggest-password').textContent = p;
-    window.passwordSuggestionData.password = p;
-    sr('fill-password', {
-      url: window.passwordSuggestionData.url,
-      username: window.passwordSuggestionData.username,
-      password: p
-    });
+    document.getElementById('suggest-pass').textContent = p;
+    window.passData.password = p;
+    sr('fill-password', {url: window.passData.url, username: window.passData.username, password: p});
   }
 }
-
-function renderExtensions(extensions) {
-  const list = document.getElementById('extensions-list');
-  list.innerHTML = '';
-  
-  extensions.forEach(ext => {
-    const extEl = document.createElement('div');
-    extEl.className = 'extension';
-    extEl.innerHTML = `
-      <div class="extension-header">
-        <div class="extension-icon">${ext.name.charAt(0)}</div>
-        <div>
-          <div class="extension-name">${ext.name} <span class="extension-version">${ext.version}</span></div>
-          <div class="extension-description">${ext.description}</div>
-        </div>
-      </div>
-      <div class="extension-actions">
-        <label class="extension-toggle">
-          <input type="checkbox" ${ext.enabled ? 'checked' : ''} onchange="toggleExtension('${ext.id}', this.checked)">
-          <span class="slider"></span>
-        </label>
-      </div>
-    `;
-    list.appendChild(extEl);
-  });
-}
-
-function toggleExtension(id, enabled) {
-  sr('ext-toggle', {id, enabled});
-}
-
-document.addEventListener('DOMContentLoaded',function() {
-  initTabs();
-  sr('ext-list', '');
-});
 
 window.addEventListener('message',function(event) {
   try {
     const data = JSON.parse(event.data);
-    if (data.a === 'update-tabs') {
-      updateTabs(data.p);
-    } else if (data.a === 'password-detected') {
-      window.passwordSuggestionData = data.p;
-      showPasswordSuggestion(data.p);
-    } else if (data.a === 'ext-list-response') {
-      extensions = data.p;
-      renderExtensions(extensions);
-    } else if (data.a === 'ext-toggle-response') {
-      const ext = extensions.find(e => e.id === data.p.id);
-      if (ext) ext.enabled = data.p.enabled;
-      renderExtensions(extensions);
-    } else if (data.a === 'nav-internal') {
-      sr('nav-internal', data.p);
-    } else if (data.a === 'nav-post') {
-      sr('nav-post', data.p);
-    } else if (data.a === 'new-tab-url') {
-      sr('new-tab-url', data.p);
-    } else if (data.a === 'console-log') {
-      sr('console-log', data.p);
-    } else if (data.a === 'inc') {
-      sr('inc', '');
-    }
+    if (data.a === 'update-tabs') updateTabs(data.p);
+    else if (data.a === 'password-detected') showPassPopup(data.p);
+    else if (data.a === 'nav-internal') sr('nav-internal', data.p);
+    else if (data.a === 'nav-post') sr('nav-post', data.p);
+    else if (data.a === 'new-tab-url') sr('new-tab-url', data.p);
+    else if (data.a === 'console-log') lg(data.p);
+    else if (data.a === 'inc') sr('inc', '');
   } catch (e) {}
 });
 
@@ -1361,9 +1045,11 @@ window.updateTabs = function(d) {
   tabs = d.tabs;
   activeTab = d.activeTab;
   renderTabs();
-  let currentUrl = tabs[activeTab].url;
-  document.getElementById('url').value = currentUrl === 'nexus://home' ? '' : currentUrl;
+  let url = tabs[activeTab].url;
+  document.getElementById('url-bar').value = url === 'nexus://home' ? '' : url;
 }
+
+renderTabs();
 </script></body></html>"###.into()
 }
 
@@ -1372,18 +1058,17 @@ window.updateTabs = function(d) {
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
-        // BẢO MẬT: Thêm sandbox attribute để ngăn chặn popup và script độc hại thoát ra ngoài
-        // Cho phép allow-presentation để YouTube có thể chạy video
+        // BẢO MẬT: Đã xóa allow-same-origin để ngăn chặn Universal XSS
         let _ = px.send_event(Ev::Js(format!(
-            "{{let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);}}",
+            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-forms allow-presentation';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
             h
         )));
-        let _ = px.send_event(Ev::Js(format!("setUrl({});", u)));
+        let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", u)));
     }
 }
 
 // ======================
-// LOAD URL (WITH TRACKING STRIPPER)
+// LOAD URL
 // ======================
 async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
     load_url_method(url, "GET", None, st, px, record).await;
@@ -1395,14 +1080,13 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
     if url == "nexus://home" {
         let home_html = r#"
         <!DOCTYPE html><html><head><style>
-        body { background: var(--bg, #0a0a0a); color: var(--t1, #00ffff); font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        h1 { font-size: 5rem; letter-spacing: 12px; margin-bottom: 10px; font-weight: 900; }
-        p { color: var(--acc, #ff007f); letter-spacing: 6px; font-weight: 600; margin-bottom: 40px; }
-        .search { width: 60%; max-width: 600px; padding: 16px; border-radius: 30px; border: 2px solid var(--t1, #00ffff); background: var(--input, #111); color: #fff; font-size: 1.2rem; text-align: center; outline: none; }
+        body { background: #fff; color: #202124; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        h1 { font-size: 4rem; color: #1a73e8; margin-bottom: 10px; font-weight: 300; }
+        .search { width: 60%; max-width: 600px; padding: 14px 24px; border-radius: 24px; border: 1px solid #dadce0; box-shadow: 0 1px 6px rgba(32,33,36,0.28); font-size: 16px; outline: none; }
+        .search:focus { border-color: #1a73e8; }
         </style></head><body>
-        <h1>NEXUS</h1>
-        <p>SECURE EDITION // AES-256 ENCRYPTED</p>
-        <input type="text" class="search" placeholder="Search Google or type URL..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
+        <h1>Nexus</h1>
+        <input type="text" class="search" placeholder="Tìm kiếm trên Google..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
         </body></html>
         "#;
         render_page(home_html, &url, px);
@@ -1411,16 +1095,17 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
             let t = g.active_tab_mut();
             t.push_hist(url.clone());
             t.url = url;
-            t.name = "Home".into();
+            t.name = "New Tab".into();
             update_tabs(&g, px);
         }
         return;
     }
 
     if cfg.sinkhole && sinkhole::check(&url) {
-        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE: {}','error');", url)));
+        let safe_url = url.replace('\'', "\\'").replace('\n', " ");
+        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE chặn: {}');", safe_url)));
         let blocked = { let mut g = st.write().await; g.blocked += 1; g.blocked };
-        let _ = px.send_event(Ev::Js(format!("uc({});", blocked)));
+        let _ = px.send_event(Ev::Js(format!("lg('Tổng số chặn: {}');", blocked)));
         return;
     }
     
@@ -1431,33 +1116,26 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         t.client.clone().unwrap_or_else(reqwest::Client::new)
     };
     
-    // BẢO MẬT 1: Ép buộc HTTPS (HSTS cơ bản)
     let secure_url = if url.starts_with("http://") && !url.contains("localhost") && !url.contains("127.0.0.1") {
         url.replace("http://", "https://")
     } else { url.clone() };
     
-    // BẢO MẬT 2: Xóa tham số theo dõi (Tracking Stripper)
     let clean_url = if let Ok(mut parsed_url) = Url::parse(&secure_url) {
         let mut query_pairs: Vec<(String, String)> = Vec::new();
         for (k, v) in parsed_url.query_pairs() {
-            // Xóa các tham số theo dõi phổ biến
             if !k.starts_with("utm_") && k != "fbclid" && k != "gclid" && k != "msclkid" {
                 query_pairs.push((k.into_owned(), v.into_owned()));
             }
         }
         parsed_url.query_pairs_mut().clear().extend_pairs(query_pairs);
         parsed_url.to_string()
-    } else {
-        secure_url.clone()
-    };
+    } else { secure_url.clone() };
     
     let req = if method == "POST" {
         let mut form = HashMap::new();
         if let Some(b) = body {
             if let Some(obj) = b.as_object() {
-                for (k, v) in obj {
-                    form.insert(k.clone(), v.as_str().unwrap_or("").to_string());
-                }
+                for (k, v) in obj { form.insert(k.clone(), v.as_str().unwrap_or("").to_string()); }
             }
         }
         client.post(&clean_url).form(&form)
@@ -1467,9 +1145,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
     
     if let Ok(r) = req.header("Referer", "").header("DNT", "1").send().await {
         let content_type = r.headers().get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("text/html")
-            .to_lowercase();
+            .and_then(|v| v.to_str().ok()).unwrap_or("text/html").to_lowercase();
 
         if content_type.contains("text/html") || content_type.contains("text/plain") {
             if let Ok(h) = r.text().await {
@@ -1477,36 +1153,30 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
                 let shield = injection::get_security_payload(&cfg);
                 let inj = format!(r#"<base href="{}">{}"#, safe_url, shield);
                 
-                // FIX BUG PANIC: Sử dụng to_ascii_lowercase()
                 let lower_h = h.to_ascii_lowercase();
-                let mut html_out = if let Some(start) = lower_h.find("<head") {
-                    h[..start].to_string() + &h[start..].find('>').map_or_else(
-                        || format!("{}{}", inj, h),
-                        |end| {
-                            let pos = start + end + 1;
-                            format!("{}{}{}", &h[..pos], inj, &h[pos..])
-                        }
-                    )
+                let mut html_out = if let Some(start) = lower_h.find("<head>") {
+                    let pos = start + 6;
+                    format!("{}{}{}", &h[..pos], inj, &h[pos..])
+                } else if let Some(start) = lower_h.find("<head ") {
+                    let pos = h[start..].find('>').map(|e| start + e + 1).unwrap_or(start);
+                    format!("{}{}{}", &h[..pos], inj, &h[pos..])
                 } else { format!("{}{}", inj, h) };
                 
                 let extensions = extensions::load_all_extensions().await;
                 if let (Some(js), Some(css)) = extensions::get_injections_for_url(&clean_url, &extensions).await {
                     let ext_api = r#"<script>if(typeof chrome==='undefined'){window.chrome={runtime:{sendMessage:function(m,c){window.top.postMessage(JSON.stringify({a:'ext-msg',p:m}),'*');}}}}</script>"#;
-                    let ext_inj = format!(r#"{}<style id="nexus-ext-css">{}</style><script id="nexus-ext-js">{}</script>"#, ext_api, css, js);
-                    if let Some(body_end) = html_out.rfind("</body>") {
-                        html_out.insert_str(body_end, &ext_inj);
-                    } else {
-                        html_out.push_str(&ext_inj);
-                    }
+                    let ext_inj = format!(r#"<style id="nexus-ext-css">{}</style><script id="nexus-ext-js">{}</script>"#, css, js);
+                    if let Some(body_end) = html_out.rfind("</body>") { html_out.insert_str(body_end, &ext_inj); }
+                    else { html_out.push_str(&ext_inj); }
                 }
-                
                 render_page(&html_out, &clean_url, px);
             }
         } else if content_type.contains("image/") {
             let html = format!(r#"<html><body style="margin:0;background:#0e0e0e;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="{}" style="max-width:100%;max-height:100%;"></body></html>"#, clean_url);
             render_page(&html, &clean_url, px);
         } else {
-            let _ = px.send_event(Ev::Js(format!("lg('Downloading: {}','info');", clean_url)));
+            let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
+            let _ = px.send_event(Ev::Js(format!("lg('Tải xuống: {}');", safe_url)));
             tokio::spawn(dl::turbo(clean_url.clone(), st.clone()));
             return;
         }
@@ -1522,7 +1192,8 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
             update_tabs(&g, px);
         }
     } else {
-        let _ = px.send_event(Ev::Js(format!("lg('Failed to load: {}','error');", clean_url)));
+        let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
+        let _ = px.send_event(Ev::Js(format!("lg('Lỗi tải: {}');", safe_url)));
     }
 }
 
@@ -1531,8 +1202,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
 // ======================
 fn update_tabs(state: &state::State, px: &tao::event_loop::EventLoopProxy<Ev>) {
     let tabs = state.tabs.iter().map(|t| json!({
-        "id": t.id, "name": t.name, "url": t.url,
-        "frozen": t.frozen, // TÍNH NĂNG ĐÓNG BĂNG TAB
+        "id": t.id, "name": t.name, "url": t.url, "frozen": t.frozen,
         "mode": match t.mode { state::TabMode::Normal => "normal", state::TabMode::Incognito => "incognito", state::TabMode::Tor => "tor" }
     })).collect::<Vec<_>>();
     
@@ -1550,10 +1220,9 @@ fn main() {
     
     let el = EventLoopBuilder::<Ev>::with_user_event().build();
     let w = WindowBuilder::new()
-        .with_title("NEXUS SECURE")
+        .with_title("Nexus Browser")
         .with_inner_size(LogicalSize::new(1200, 800))
-        .build(&el)
-        .unwrap();
+        .build(&el).unwrap();
     
     let mut initial = state::State::new();
     initial.tabs[0].vault = Some(vault::load());
@@ -1563,15 +1232,12 @@ fn main() {
     let rt = Builder::new_multi_thread()
         .worker_threads(std::cmp::max(2, num_cpus::get() - 1))
         .thread_stack_size(2 * 1024 * 1024)
-        .enable_all()
-        .build()
-        .unwrap();
+        .enable_all().build().unwrap();
     
     let handle = rt.handle().clone();
     let handle_for_loop = handle.clone();
     let (ist, ipx) = (st.clone(), px.clone());
     
-    // --- TÍNH NĂNG ĐÓNG BĂNG TAB (BACKGROUND TASK) ---
     let freeze_st = st.clone();
     let freeze_px = px.clone();
     rt.spawn(async move {
@@ -1581,25 +1247,19 @@ fn main() {
             let mut g = freeze_st.write().await;
             let active_idx = g.active_tab;
             let mut changed = false;
-            
             for (i, tab) in g.tabs.iter_mut().enumerate() {
-                // Nếu không phải tab hiện tại, chưa bị đóng băng, và không hoạt động > 5 phút
                 if i != active_idx && !tab.frozen && tab.last_active.elapsed() > Duration::from_secs(300) {
                     tab.frozen = true;
-                    tab.client = None; // Giải phóng bộ nhớ reqwest client
+                    tab.client = None;
                     changed = true;
                 }
             }
-            if changed {
-                update_tabs(&g, &freeze_px);
-            }
+            if changed { update_tabs(&g, &freeze_px); }
         }
     });
     
     let wb = WebViewBuilder::new()
-        // BẢO MẬT: Tắt DevTools để tránh bị inject script từ bên ngoài
         .with_devtools(false)
-        // SPOOFING: Giả mạo User-Agent ở cấp độ WebView để Google Login không chặn
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .with_html(html())
         .with_back_forward_navigation_gestures(false)
@@ -1612,217 +1272,101 @@ fn main() {
             
             handle.spawn(async move {
                 match a.as_str() {
-                    "nav" | "nav-internal" => {
-                        if let Some(u) = d.as_str().map(search::resolve) {
-                            load_url(u, ist.clone(), &ipx, true).await;
-                        }
-                    }
+                    "nav" | "nav-internal" => if let Some(u) = d.as_str().map(search::resolve) { load_url(u, ist.clone(), &ipx, true).await; },
                     "nav-post" => {
                         let url = d["url"].as_str().unwrap_or("").to_string();
                         let body = d["body"].clone();
                         load_url_method(url, "POST", Some(body), ist.clone(), &ipx, true).await;
                     }
-                    "new-tab-url" => {
-                        if let Some(url) = d.as_str() {
-                            let mut g = ist.write().await;
-                            let idx = g.new_tab(state::TabMode::Normal);
-                            ipx.send_event(Ev::NewTab(idx)).ok();
-                            update_tabs(&g, &ipx);
-                            let u = url.to_string();
-                            drop(g);
-                            load_url(u, ist.clone(), &ipx, true).await;
-                        }
-                    }
-                    "console-log" => {
-                        if let Some(msg) = d.as_str() {
-                            let safe_msg = msg.replace('\'', "\\'").replace('\n', " ");
-                            ipx.send_event(Ev::Js(format!("lg('{}','info');", safe_msg))).ok();
-                        }
-                    }
-                    "bookmark" => {
-                        if let Some(url) = d.as_str() {
-                            if url.is_empty() || url == "nexus://home" { return; }
-                            let mut g = ist.write().await;
-                            g.bookmarks.push(state::Bookmark { title: url.to_string(), url: url.to_string() });
-                            ipx.send_event(Ev::Js("lg('⭐ Bookmark saved','info');".into())).ok();
-                        }
-                    }
-                    "back" => {
+                    "new-tab-url" => if let Some(url) = d.as_str() {
                         let mut g = ist.write().await;
-                        if let Some(u) = g.active_tab_mut().go_back() {
-                            drop(g);
-                            load_url(u, ist.clone(), &ipx, false).await;
-                        }
+                        let idx = g.new_tab(state::TabMode::Normal);
+                        ipx.send_event(Ev::NewTab(idx)).ok();
+                        update_tabs(&g, &ipx);
+                        let u = url.to_string();
+                        drop(g);
+                        load_url(u, ist.clone(), &ipx, true).await;
                     }
-                    "fwd" => {
+                    "console-log" => if let Some(msg) = d.as_str() {
+                        let safe_msg = msg.replace('\'', "\\'").replace('\n', " ");
+                        ipx.send_event(Ev::Js(format!("lg('{}');", safe_msg))).ok();
+                    }
+                    "bookmark" => if let Some(url) = d.as_str() {
+                        if url.is_empty() || url == "nexus://home" { return; }
                         let mut g = ist.write().await;
-                        if let Some(u) = g.active_tab_mut().go_fwd() {
-                            drop(g);
-                            load_url(u, ist.clone(), &ipx, false).await;
-                        }
+                        g.bookmarks.push(state::Bookmark { title: url.to_string(), url: url.to_string() });
+                        ipx.send_event(Ev::Js("lg('Đã lưu trang');".into())).ok();
                     }
-                    "ref" => {
-                        let g = ist.read().await;
-                        if let Some(u) = g.active_tab().current() {
-                            drop(g);
-                            load_url(u, ist.clone(), &ipx, false).await;
-                        }
-                    }
-                    "inc" => {
-                        let c = { let mut g = ist.write().await; g.blocked += 1; g.blocked };
-                        ipx.send_event(Ev::Js(format!("uc({});", c))).ok();
-                    }
+                    "back" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_back() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
+                    "fwd" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_fwd() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
+                    "ref" => { let g = ist.read().await; if let Some(u) = g.active_tab().current() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
+                    "inc" => { let c = { let mut g = ist.write().await; g.blocked += 1; g.blocked }; ipx.send_event(Ev::Js(format!("lg('Đã chặn request: {}');", c))).ok(); }
                     "shld" => if let (Some(s), Some(v)) = (d["s"].as_str(), d["v"].as_bool()) {
                         let mut g = ist.write().await;
-                        {
-                            let tab = g.active_tab_mut();
-                            match s {
-                                "ad" => tab.cfg.ad = v,
-                                "trk" => tab.cfg.trk = v,
-                                "sink" => tab.cfg.sinkhole = v,
-                                "cookie" => tab.cfg.cookie = v,
-                                "anti_fp" => tab.cfg.anti_fp = v,
-                                "warp" => { 
-                                    tab.cfg.warp = v; 
-                                    if v { 
-                                        tab.cfg.tor = false; 
-                                        ipx.send_event(Ev::Js("document.getElementById('tor-toggle').checked = false;".into())).ok();
-                                    } 
-                                },
-                                "tor" => { 
-                                    tab.cfg.tor = v; 
-                                    if v { 
-                                        tab.cfg.warp = false; 
-                                        ipx.send_event(Ev::Js("document.getElementById('warp-toggle').checked = false;".into())).ok();
-                                    } 
-                                },
-                                _ => {}
-                            }
-                            if matches!(s, "ad" | "trk" | "sink" | "cookie" | "anti_fp" | "warp" | "tor") {
-                                tab.update_client();
-                            }
+                        { let tab = g.active_tab_mut(); match s {
+                            "ad" => tab.cfg.ad = v, "trk" => tab.cfg.trk = v, "sink" => tab.cfg.sinkhole = v,
+                            "cookie" => tab.cfg.cookie = v, "anti_fp" => tab.cfg.anti_fp = v,
+                            "warp" => { tab.cfg.warp = v; if v { tab.cfg.tor = false; ipx.send_event(Ev::Js("document.getElementById('tor-toggle').checked=false;".into())).ok(); } },
+                            "tor" => { tab.cfg.tor = v; if v { tab.cfg.warp = false; ipx.send_event(Ev::Js("document.getElementById('warp-toggle').checked=false;".into())).ok(); } },
+                            _ => {} }
+                            if matches!(s, "ad" | "trk" | "sink" | "cookie" | "anti_fp" | "warp" | "tor") { tab.update_client(); }
                         }
-                        match s {
-                            "auto-save" => g.global_cfg.auto_save_passwords = v,
-                            "pass-suggest" => g.global_cfg.show_password_suggestions = v,
-                            "sync-chrome" => g.sync.config.chrome = v,
-                            "sync-firefox" => g.sync.config.firefox = v,
-                            "sync-edge" => g.sync.config.edge = v,
-                            _ => {}
-                        }
+                        match s { "auto-save" => g.global_cfg.auto_save_passwords = v, "pass-suggest" => g.global_cfg.show_password_suggestions = v, "sync-chrome" => g.sync.config.chrome = v, "sync-firefox" => g.sync.config.firefox = v, "sync-edge" => g.sync.config.edge = v, _ => {} }
                     },
                     "ai_cfg" => if let (Some(e), Some(k), Some(m)) = (d["e"].as_str(), d["k"].as_str(), d["m"].as_str()) {
-                        let mut g = ist.write().await;
-                        let tab = g.active_tab_mut();
+                        let mut g = ist.write().await; let tab = g.active_tab_mut();
                         tab.ai.endpoint = e.into(); tab.ai.key = k.into(); tab.ai.model = m.into();
-                        ipx.send_event(Ev::Js("lg('AI config saved','info');".into())).ok();
+                        ipx.send_event(Ev::Js("lg('Đã lưu cấu hình AI');".into())).ok();
                     },
-                    "ai" => {
-                        if let Some(p) = d.as_str() {
-                            let r = ai::ask(p.into(), ist.clone()).await;
-                            if let Ok(j) = serde_json::to_string(&r) {
-                                ipx.send_event(Ev::Js(format!("addAi('a',{});", j))).ok();
-                            }
-                        }
+                    "ai" => if let Some(p) = d.as_str() {
+                        let r = ai::ask(p.into(), ist.clone()).await;
+                        if let Ok(j) = serde_json::to_string(&r) { ipx.send_event(Ev::Js(format!("addAi({});", j))).ok(); }
                     }
-                    "vault" => if let (Some(a), Some(m), Some(d), Some(u), Some(p)) = 
-                        (d["a"].as_str(), d["m"].as_str(), d["d"].as_str(), d["u"].as_str(), d["p"].as_str()) 
-                    {
+                    "vault" => if let (Some(a), Some(m), Some(d), Some(u), Some(p)) = (d["a"].as_str(), d["m"].as_str(), d["d"].as_str(), d["u"].as_str(), d["p"].as_str()) {
                         let (act, m, d, u, p) = (a.to_string(), m.to_string(), d.to_string(), u.to_string(), p.to_string());
-                        let master = zeroize::Zeroizing::new(m);
-                        
+                        let master = zeroize::Zeroizing::new(m.clone());
                         if act == "save" && !master.is_empty() && !d.is_empty() {
                             if let Some((enc, nonce, salt)) = vault::encrypt(&p, &master) {
                                 let entries = {
-                                    let mut g = ist.write().await;
-                                    let tab = g.active_tab_mut();
+                                    let mut g = ist.write().await; let tab = g.active_tab_mut();
                                     if let Some(vault) = &mut tab.vault {
                                         vault.push(state::VaultEntry {
                                             domain: d, user: u, pass: enc, nonce, salt,
                                             created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
                                             last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                                        });
-                                        vault.clone()
+                                        }); vault.clone()
                                     } else { Vec::new() }
                                 };
-                                let msg = if !entries.is_empty() && vault::save(&entries) {
-                                    "vRes('✅ Saved');"
-                                } else {
-                                    "vRes('⚠ Save failed');"
-                                };
+                                let msg = if !entries.is_empty() && vault::save(&entries) { "vRes('Đã lưu thành công');" } else { "vRes('Lỗi khi lưu');" };
                                 ipx.send_event(Ev::Js(msg.into())).ok();
                             }
                         } else if act == "get" {
-                            let found = {
-                                let g = ist.read().await;
-                                g.active_tab().vault.as_ref().and_then(|v| v.iter().find(|e| e.domain == d).map(|e| (e.user.clone(), e.pass.clone(), e.nonce.clone(), e.salt.clone())))
-                            };
-                            
+                            let found = { let g = ist.read().await; g.active_tab().vault.as_ref().and_then(|v| v.iter().find(|e| e.domain == d).map(|e| (e.user.clone(), e.pass.clone(), e.nonce.clone(), e.salt.clone()))) };
                             if let Some((user, pass, nonce, salt)) = found {
                                 if let Some(dec) = vault::decrypt(&pass, &nonce, &salt, &master) {
-                                    if let Ok(d) = serde_json::to_string(&dec) {
-                                        ipx.send_event(Ev::Js(format!(
-                                            "document.getElementById('v-pass').value={};vRes('🔓 User: {}');",
-                                            d, user.replace('\'', "")
-                                        ))).ok();
-                                    }
-                                } else {
-                                    ipx.send_event(Ev::Js("vRes('❌ Wrong password');".into())).ok();
-                                }
-                            } else {
-                                ipx.send_event(Ev::Js("vRes('❌ Not found');".into())).ok();
-                            }
+                                    if let Ok(d) = serde_json::to_string(&dec) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Mật khẩu cho {}');", d, user.replace('\'', "")))).ok(); }
+                                } else { ipx.send_event(Ev::Js("vRes('Sai mật khẩu chính');".into())).ok(); }
+                            } else { ipx.send_event(Ev::Js("vRes('Không tìm thấy');".into())).ok(); }
                         } else if act == "gen" {
                             let gpw = vault::generate(16);
-                            if let Ok(g) = serde_json::to_string(&gpw) {
-                                ipx.send_event(Ev::Js(format!(
-                                    "document.getElementById('v-pass').value={};vRes('🎲 Generated');",
-                                    g
-                                ))).ok();
-                            }
+                            if let Ok(g) = serde_json::to_string(&gpw) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Đã tạo mật khẩu');", g))).ok(); }
                         }
                     },
-                    "new-tab" => {
-                        if let Some(m) = d.as_str() {
-                            let mode = match m {
-                                "incognito" => state::TabMode::Incognito,
-                                "tor" => state::TabMode::Tor,
-                                _ => state::TabMode::Normal,
-                            };
-                            let mut g = ist.write().await;
-                            let idx = g.new_tab(mode);
-                            ipx.send_event(Ev::NewTab(idx)).ok();
-                            update_tabs(&g, &ipx);
-                        }
+                    "new-tab" => if let Some(m) = d.as_str() {
+                        let mode = match m { "incognito" => state::TabMode::Incognito, "tor" => state::TabMode::Tor, _ => state::TabMode::Normal };
+                        let mut g = ist.write().await; let idx = g.new_tab(mode);
+                        ipx.send_event(Ev::NewTab(idx)).ok(); update_tabs(&g, &ipx);
                     }
                     "close-tab" => if let Some(i) = d.as_u64() {
-                        let mut g = ist.write().await;
-                        if g.close_tab(i as usize) {
-                            ipx.send_event(Ev::CloseTab(i as usize)).ok();
-                            update_tabs(&g, &ipx);
-                        }
+                        let mut g = ist.write().await; if g.close_tab(i as usize) { ipx.send_event(Ev::CloseTab(i as usize)).ok(); update_tabs(&g, &ipx); }
                     },
                     "switch-tab" => if let Some(i) = d.as_u64() {
-                        let mut g = ist.write().await;
-                        g.switch_tab(i as usize);
-                        update_tabs(&g, &ipx);
-                        if let Some(url) = g.active_tab().current() {
-                            drop(g);
-                            load_url(url, ist.clone(), &ipx, false).await;
-                        }
+                        let mut g = ist.write().await; g.switch_tab(i as usize); update_tabs(&g, &ipx);
+                        if let Some(url) = g.active_tab().current() { drop(g); load_url(url, ist.clone(), &ipx, false).await; }
                     },
                     "unfreeze-tab" => if let Some(i) = d.as_u64() {
-                        let url = {
-                            let mut g = ist.write().await;
-                            let tab = &mut g.tabs[i as usize];
-                            tab.frozen = false;
-                            tab.last_active = Instant::now();
-                            tab.url.clone()
-                        };
-                        let mut g = ist.write().await;
-                        g.switch_tab(i as usize);
-                        update_tabs(&g, &ipx);
-                        drop(g);
+                        let url = { let mut g = ist.write().await; let tab = &mut g.tabs[i as usize]; tab.frozen = false; tab.last_active = Instant::now(); tab.url.clone() };
+                        let mut g = ist.write().await; g.switch_tab(i as usize); update_tabs(&g, &ipx); drop(g);
                         load_url(url, ist.clone(), &ipx, false).await;
                     },
                     "password-detected" => {
@@ -1831,36 +1375,21 @@ fn main() {
                             let url_js = serde_json::to_string(url).unwrap_or_default();
                             let user_js = serde_json::to_string(user).unwrap_or_default();
                             let pass_js = serde_json::to_string(pass).unwrap_or_default();
-                            
-                            ipx.send_event(Ev::Js(format!(
-                                r#"if(window.showPasswordSuggestion)window.showPasswordSuggestion({{"url":{},"username":{},"password":{}}})"#,
-                                url_js, user_js, pass_js
-                            ))).ok();
+                            ipx.send_event(Ev::Js(format!(r#"if(window.showPassPopup)window.showPassPopup({{"url":{},"username":{},"password":{}}})"#, url_js, user_js, pass_js))).ok();
                         }
                     },
                     "save-password" => {
-                        let (url, user, pass) = (d["url"].as_str().unwrap_or(""), d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""));
-                        if !url.is_empty() && !user.is_empty() && !pass.is_empty() {
-                            let domain = {
-                                if let Ok(parsed) = Url::parse(url) {
-                                    parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string())
-                                } else {
-                                    url.split('/').next().unwrap_or(url).to_string()
-                                }
-                            };
-                            
+                        let (url, user, pass, master) = (d["url"].as_str().unwrap_or(""), d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""), d["master"].as_str().unwrap_or(""));
+                        if !url.is_empty() && !user.is_empty() && !pass.is_empty() && !master.is_empty() {
+                            let domain = if let Ok(parsed) = Url::parse(url) { parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string()) } else { url.split('/').next().unwrap_or(url).to_string() };
                             let mut g = ist.write().await;
                             if let Some(vault) = &mut g.active_tab_mut().vault {
                                 if let Some(entry) = vault.iter_mut().find(|e| e.domain == domain && e.user == user) {
                                     entry.pass = pass.into();
                                     entry.last_used = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                                } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, "") {
+                                } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
                                     vault.push(state::VaultEntry {
-                                        domain: domain.clone(), 
-                                        user: user.into(), 
-                                        pass: enc, 
-                                        nonce, 
-                                        salt,
+                                        domain: domain.clone(), user: user.into(), pass: enc, nonce, salt,
                                         created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
                                         last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
                                     });
@@ -1874,82 +1403,37 @@ fn main() {
                         if !user.is_empty() && !pass.is_empty() {
                             let user_js = serde_json::to_string(user).unwrap_or_default();
                             let pass_js = serde_json::to_string(pass).unwrap_or_default();
-                            
-                            ipx.send_event(Ev::Js(format!(
-                                r#"if(window.nexusFillPassword)window.nexusFillPassword({},{});"#,
-                                user_js, pass_js
-                            ))).ok();
+                            ipx.send_event(Ev::Js(format!(r#"if(window.nexusFillPassword)window.nexusFillPassword({},{});"#, user_js, pass_js))).ok();
                         }
                     },
                     "sync-now" => {
                         let mut g = ist.write().await;
-                        let (c, f, e) = (
-                            g.sync.import_from_browser("chrome"),
-                            g.sync.import_from_browser("firefox"),
-                            g.sync.import_from_browser("edge"),
-                        );
+                        let (c, f, e) = (g.sync.import_from_browser("chrome"), g.sync.import_from_browser("firefox"), g.sync.import_from_browser("edge"));
                         let active_tab = g.active_tab;
-                        // FIXED (E0502): `g.sync.method(&mut g.tabs[active_tab])`
-                        // makes the borrow checker treat the whole `g` as
-                        // borrowed once `&mut g.tabs[active_tab]` is taken
-                        // (indexing via `[]` doesn't get the same disjoint-
-                        // field treatment as plain field access). Clone the
-                        // small sync snapshot first so the two borrows never
-                        // overlap.
                         let sync_snapshot = g.sync.clone();
-                        {
-                            let tab = &mut g.tabs[active_tab];
-                            sync_snapshot.sync_to_active_tab(tab);
-                        }
+                        { let tab = &mut g.tabs[active_tab]; sync_snapshot.sync_to_active_tab(tab); }
                         if let Some(vault) = &g.tabs[active_tab].vault { vault::save(vault); }
-                        ipx.send_event(Ev::Js(format!(
-                            r#"lg('Sync: Chrome({}), Firefox({}), Edge({})','info')"#,
-                            c, f, e
-                        ))).ok();
+                        ipx.send_event(Ev::Js(format!("lg('Đồng bộ: Chrome({}), Firefox({}), Edge({})');", c, f, e))).ok();
                     },
                     "ext-list" => {
                         let extensions = extensions::load_all_extensions().await;
-                        let ext_data = extensions.iter().map(|e| json!({
-                            "id": e.id,
-                            "name": e.manifest.name,
-                            "version": e.manifest.version,
-                            "description": e.manifest.description,
-                            "enabled": e.enabled
-                        })).collect::<Vec<_>>();
-                        
-                        ipx.send_event(Ev::Js(format!(
-                            r#"if(window.postMessage) window.postMessage(JSON.stringify({{a:'ext-list-response',p:{}}}));"#,
-                            serde_json::to_string(&ext_data).unwrap_or_default()
-                        ))).ok();
+                        let ext_data = extensions.iter().map(|e| json!({ "id": e.id, "name": e.manifest.name, "version": e.manifest.version, "description": e.manifest.description, "enabled": e.enabled })).collect::<Vec<_>>();
+                        ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-list-response',p:{}}}));"#, serde_json::to_string(&ext_data).unwrap_or_default()))).ok();
                     },
-                    "ext-toggle" => {
-                        if let (Some(id), Some(enabled)) = (d["id"].as_str(), d["enabled"].as_bool()) {
-                            let ext_dir = std::path::Path::new("nexus_extensions").join(id);
-                            if ext_dir.exists() {
-                                if enabled {
-                                    std::fs::remove_file(ext_dir.join("DISABLED")).ok();
-                                } else {
-                                    std::fs::write(ext_dir.join("DISABLED"), "").ok();
-                                }
-                                ipx.send_event(Ev::Js(format!(
-                                    r#"if(window.postMessage) window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:'{}',enabled:{}}}}}));"#,
-                                    id, enabled
-                                ))).ok();
-                            }
+                    "ext-toggle" => if let (Some(id), Some(enabled)) = (d["id"].as_str(), d["enabled"].as_bool()) {
+                        let ext_dir = std::path::Path::new("nexus_extensions").join(id);
+                        if ext_dir.exists() {
+                            if enabled { std::fs::remove_file(ext_dir.join("DISABLED")).ok(); }
+                            else { std::fs::write(ext_dir.join("DISABLED"), "").ok(); }
+                            ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:'{}',enabled:{}}}}}));"#, id, enabled))).ok();
                         }
                     },
-                    "ext-msg" => {
-                        ipx.send_event(Ev::Js(format!("lg('Extension message: {}','info');", d))).ok();
-                    },
+                    "ext-msg" => ipx.send_event(Ev::Js(format!("lg('Extension message: {}');", d))).ok(),
                     _ => {}
                 }
             });
         });
     
-    // FIXED cho wry 0.35+: WebViewBuilder::new() không còn nhận window lúc
-    // khởi tạo nữa — window được gắn vào lúc build(). Trên Linux, backend
-    // là WebKitGTK nên bắt buộc dùng build_gtk(window.gtk_window()) thay vì
-    // build(&w) (build(&w) sẽ panic/lỗi type trên Linux).
     #[cfg(not(target_os = "linux"))]
     let wv = wb.build(&w).unwrap();
     #[cfg(target_os = "linux")]
@@ -1960,21 +1444,17 @@ fn main() {
     };
     
     extensions::api::setup_extension_apis(&wv);
-    autoconfig::update_ui(&px);
     
-    let ext_list = rt.block_on(async { extensions::load_all_extensions().await });
-    let ext_data = ext_list.iter().map(|e| json!({
-        "id": e.id,
-        "name": e.manifest.name,
-        "version": e.manifest.version,
-        "description": e.manifest.description,
-        "enabled": e.enabled
-    })).collect::<Vec<_>>();
-    
-    px.send_event(Ev::Js(format!(
-        r#"if(window.postMessage) window.postMessage(JSON.stringify({{a:'ext-list-response',p:{}}}));"#,
-        serde_json::to_string(&ext_data).unwrap_or_default()
-    ))).ok();
+    // Đẩy autoconfig vào async để không block UI
+    let px_clone = px.clone();
+    rt.spawn(async move {
+        let warp_detected = autoconfig::detect_warp();
+        let tor_detected = autoconfig::detect_tor().await;
+        let _ = px_clone.send_event(Ev::Js(format!(
+            "document.getElementById('warp-toggle').checked = {}; document.getElementById('tor-toggle').checked = {};",
+            warp_detected, tor_detected
+        )));
+    });
     
     update_tabs(&st.blocking_read(), &px);
     
@@ -1983,30 +1463,21 @@ fn main() {
         *cf = ControlFlow::Wait;
         match ev {
             Event::NewEvents(StartCause::Init) => {
-                px.send_event(Ev::Js("lg('NEXUS CORE INITIALIZED','info')".into())).ok();
-                px.send_event(Ev::Js("lg('AES-256-GCM Vault Ready','info')".into())).ok();
-                px.send_event(Ev::Js("lg('Extensions System Ready','info')".into())).ok();
-                px.send_event(Ev::Js("lg('WARP/Tor auto-detection complete','info')".into())).ok();
-                
-                handle_for_loop.spawn({
-                    let (st, px) = (st.clone(), px.clone());
-                    async move { load_url("nexus://home".into(), st, &px, false).await; }
-                });
+                px.send_event(Ev::Js("lg('Nexus Core đã khởi động');".into())).ok();
+                handle_for_loop.spawn({ let (st, px) = (st.clone(), px.clone()); async move { load_url("nexus://home".into(), st, &px, false).await; } });
             }
             Event::UserEvent(Ev::Js(j)) => {
                 js_queue.push(j);
                 if js_queue.len() >= 5 || last_flush.elapsed() > Duration::from_millis(16) {
-                    let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(""));
+                    // Đã fix: Join bằng dấu chấm phẩy để chống vỡ cú pháp JS
+                    let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(";"));
                     last_flush = Instant::now();
                 }
             }
             Event::UserEvent(Ev::NewTab(_)) | Event::UserEvent(Ev::CloseTab(_)) => {
                 update_tabs(&st.blocking_read(), &px);
                 if let Event::UserEvent(Ev::NewTab(_)) = ev {
-                    handle_for_loop.spawn({
-                        let (st, px) = (st.clone(), px.clone());
-                        async move { load_url("nexus://home".into(), st, &px, false).await; }
-                    });
+                    handle_for_loop.spawn({ let (st, px) = (st.clone(), px.clone()); async move { load_url("nexus://home".into(), st, &px, false).await; } });
                 }
             }
             Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => *cf = ControlFlow::Exit,
