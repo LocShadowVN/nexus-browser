@@ -102,19 +102,18 @@ jobs:
 
       # ubuntu-latest của GitHub đã có sẵn Rust/cargo cài sẵn, không cần
       # thêm bước cài toolchain riêng cho việc này.
-      - name: Tự tạo Cargo.lock nếu repo chưa có (chỉ chạy 1 lần)
-        run: |
-          if [ ! -f Cargo.lock ]; then
-            echo "Chưa có Cargo.lock, tự sinh..."
-            cargo generate-lockfile
-          else
-            echo "Đã có Cargo.lock, bỏ qua."
-          fi
+      - name: Cập nhật Cargo.lock lên bản mới nhất còn hợp lệ với Cargo.toml
+        # cargo update vừa tự tạo Cargo.lock nếu chưa có, vừa "làm mới" nó
+        # lên các bản dependency mới nhất còn khớp Cargo.toml — đây là chỗ
+        # các bản vá bảo mật (như idna >=1.0.0 cho RUSTSEC-2024-0421) được
+        # áp dụng, vì trước giờ Cargo.lock chỉ được tạo 1 lần rồi "đóng
+        # băng" mãi, không tự cập nhật.
+        run: cargo update
 
-      - name: Tự commit Cargo.lock ngược lại repo (nếu vừa mới tạo)
+      - name: Tự commit Cargo.lock nếu có thay đổi
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "ci: auto-generate Cargo.lock"
+          commit_message: "ci: cargo update (cập nhật dependency, vá lỗ hổng nếu có)"
           file_pattern: Cargo.lock
 
       - name: Cài cargo-audit
