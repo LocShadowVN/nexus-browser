@@ -701,8 +701,6 @@ mod extensions {
                         Some("document_idle") => "document.readyState === 'complete'",
                         _ => "true",
                     };
-                    
-                    // FIX LỖI FORMAT STRING: Sử dụng index để tránh xung đột dấu ngoặc nhọn
                     js_injection.push_str(&format!(
                         r#"(function(){{if({0}){{{1}}};document.addEventListener('readystatechange',function(){{if({0}){{{1}}}}});}})();"#,
                         run_condition, js_content
@@ -827,7 +825,6 @@ fn html() -> String {
 body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
 
-/* TABS BAR */
 #tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent}
 .tab{display:flex;align-items:center;max-width:220px;min-width:120px;height:32px;margin:0 2px;padding:0 12px;border-radius:8px 8px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;overflow:hidden;transition:background 0.2s}
 .tab:hover{background:rgba(0,0,0,0.05)}
@@ -839,7 +836,6 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #new-tab-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
 #new-tab-btn:hover{background:rgba(0,0,0,0.05)}
 
-/* TOOLBAR */
 #toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd)}
 .nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
 .nav-btn:hover{background:var(--input)}
@@ -848,11 +844,9 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 .tool-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;font-size:16px}
 .tool-btn:hover{background:var(--input)}
 
-/* WORKSPACE */
 #workspace{flex:1;background:#fff;overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
-/* SIDEBAR MENU */
 #sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:100;overflow-y:auto;transition:right 0.3s}
 #sidebar.open{right:0}
 .sidebar-header{padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
@@ -866,7 +860,6 @@ iframe{width:100%;height:100%;border:none}
 input:checked+.slider{background:var(--acc)}
 input:checked+.slider:before{transform:translateX(16px)}
 
-/* MODALS */
 .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);z-index:1000;display:none;padding:24px}
 .modal.show{display:block}
 .modal-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--t1)}
@@ -877,12 +870,10 @@ input:checked+.slider:before{transform:translateX(16px)}
 .modal-btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
 .modal-btn.primary:hover{background:#1557b0}
 
-/* TOAST / DEV CONSOLE */
 #dev-console{position:fixed;bottom:0;right:0;width:400px;height:200px;background:rgba(0,0,0,0.8);color:#0f0;border-radius:8px 0 0 0;padding:10px;font-size:12px;z-index:99;display:none;overflow-y:auto}
 #dev-console.show{display:block}
 .log-entry{margin-bottom:4px;word-break:break-all}
 
-/* PASSWORD POPUP */
 #pass-popup{position:fixed;bottom:20px;right:20px;width:320px;background:var(--panel);border:1px solid var(--brd);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:2000;padding:16px;display:none}
 .popup-header{display:flex;justify-content:space-between;margin-bottom:12px}
 .popup-title{font-weight:600;font-size:14px}
@@ -895,7 +886,6 @@ input:checked+.slider:before{transform:translateX(16px)}
 </style></head><body>
 <div id="app">
   <div id="tabs-bar"></div>
-  
   <div id="toolbar">
     <button class="nav-btn" onclick="sr('back')">←</button>
     <button class="nav-btn" onclick="sr('fwd')">→</button>
@@ -910,29 +900,24 @@ input:checked+.slider:before{transform:translateX(16px)}
 
   <div id="workspace"></div>
   <div id="dev-console"></div>
-  
   <div id="sidebar">
     <div class="sidebar-header">Cài đặt Nexus</div>
-    <div class="sidebar-section">
-      <div class="section-title">Kết nối</div>
+    <div class="sidebar-section"><div class="section-title">Kết nối</div>
       <div class="row"><span>Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Mạng Tor</span><label class="switch"><input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section">
-      <div class="section-title">Bảo vệ</div>
+    <div class="sidebar-section"><div class="section-title">Bảo vệ</div>
       <div class="row"><span>Chặn Quảng cáo</span><label class="switch"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Chàn Tracker</span><label class="switch"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Bảo vệ Cookie</span><label class="switch"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Chặn Domain</span><label class="switch"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Anti-Fingerprint</span><label class="switch"><input type="checkbox" checked onchange="ts('anti_fp',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section">
-      <div class="section-title">Mật khẩu</div>
+    <div class="sidebar-section"><div class="section-title">Mật khẩu</div>
       <div class="row"><span>Tự động lưu</span><label class="switch"><input type="checkbox" checked onchange="ts('auto-save',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Gợi ý mật khẩu</span><label class="switch"><input type="checkbox" checked onchange="ts('pass-suggest',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section">
-      <div class="section-title">Đồng bộ hóa</div>
+    <div class="sidebar-section"><div class="section-title">Đồng bộ hóa</div>
       <div class="row"><span>Chrome</span><label class="switch"><input type="checkbox" onchange="ts('sync-chrome',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Firefox</span><label class="switch"><input type="checkbox" onchange="ts('sync-firefox',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Edge</span><label class="switch"><input type="checkbox" onchange="ts('sync-edge',this.checked)"><span class="slider"></span></label></div>
@@ -966,10 +951,7 @@ input:checked+.slider:before{transform:translateX(16px)}
   </div>
 
   <div id="pass-popup">
-    <div class="popup-header">
-      <div class="popup-title">Lưu mật khẩu?</div>
-      <span class="popup-close" onclick="hidePassPopup()">&times;</span>
-    </div>
+    <div class="popup-header"><div class="popup-title">Lưu mật khẩu?</div><span class="popup-close" onclick="hidePassPopup()">&times;</span></div>
     <div class="popup-domain" id="suggest-domain"></div>
     <div class="popup-pass" id="suggest-pass"></div>
     <div class="popup-actions">
@@ -1015,11 +997,7 @@ function showPassPopup(d) {
 function hidePassPopup() { document.getElementById('pass-popup').style.display = 'none'; }
 function savePassPopup() {
   if (window.passData) {
-    if (!currentMasterPass) {
-      alert('Vui lòng nhập Master Password trong Vault trước khi lưu!');
-      toggleModal('vault');
-      return;
-    }
+    if (!currentMasterPass) { alert('Vui lòng nhập Master Password trong Vault trước khi lưu!'); toggleModal('vault'); return; }
     sr('save-password', {url: window.passData.url, username: window.passData.username, password: window.passData.password, master: currentMasterPass});
     hidePassPopup();
   }
@@ -1047,19 +1025,16 @@ window.addEventListener('message',function(event) {
 });
 
 window.updateTabs = function(d) {
-  tabs = d.tabs;
-  activeTab = d.activeTab;
-  renderTabs();
+  tabs = d.tabs; activeTab = d.activeTab; renderTabs();
   let url = tabs[activeTab].url;
   document.getElementById('url-bar').value = url === 'nexus://home' ? '' : url;
 }
-
 renderTabs();
 </script></body></html>"###.into()
 }
 
 // ======================
-// RENDER PAGE (SECURE IFRAME)
+// RENDER PAGE
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
@@ -1262,8 +1237,8 @@ fn main() {
         }
     });
     
-    // FIX LỖI WRY 0.35 API: Truyền &w vào new()
-    let wb = WebViewBuilder::new(&w)
+    // WRY 0.47 API: new() không nhận window, window được truyền ở build()
+    let wb = WebViewBuilder::new()
         .with_devtools(false)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .with_html(html())
@@ -1433,21 +1408,14 @@ fn main() {
                             ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:'{}',enabled:{}}}}}));"#, id, enabled))).ok();
                         }
                     },
-                    // FIX LỖI MATCH ARMS: Bọc trong block {} để trả về () thay vì Option<()>
                     "ext-msg" => { ipx.send_event(Ev::Js(format!("lg('Extension message: {}');", d))).ok(); },
                     _ => {}
                 }
             });
         });
     
-    #[cfg(not(target_os = "linux"))]
+    // WRY 0.47 API: Truyền &w vào hàm build()
     let wv = wb.build(&w).unwrap();
-    #[cfg(target_os = "linux")]
-    let wv = {
-        use tao::platform::unix::WindowExtUnix;
-        use wry::WebViewBuilderExtUnix;
-        wb.build_gtk(w.gtk_window()).unwrap()
-    };
     
     extensions::api::setup_extension_apis(&wv);
     
