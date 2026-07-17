@@ -609,7 +609,8 @@ mod dl {
                 if sem.acquire().await.is_err() { return; }
                 let response = client.get(&url).header("Range", format!("bytes={}-{}", s, e)).send().await;
                 if let Ok(response) = response {
-                    if let Some(bytes) = response.bytes().await.ok() {
+                    // FIX CLIPPY: Sử dụng if let Ok thay vì .ok() rồi if let Some
+                    if let Ok(bytes) = response.bytes().await {
                         let mut f = file.lock().await;
                         if f.seek(std::io::SeekFrom::Start(s)).await.is_ok() { f.write_all(&bytes).await.ok(); }
                     } else { failed.fetch_add(1, Ordering::SeqCst); }
@@ -1237,7 +1238,6 @@ fn main() {
         }
     });
     
-    // WRY 0.47 API: new() không nhận window, window được truyền ở build()
     let wb = WebViewBuilder::new()
         .with_devtools(false)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
@@ -1414,7 +1414,6 @@ fn main() {
             });
         });
     
-    // WRY 0.47 API: Truyền &w vào hàm build()
     let wv = wb.build(&w).unwrap();
     
     extensions::api::setup_extension_apis(&wv);
