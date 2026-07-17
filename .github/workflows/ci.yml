@@ -159,8 +159,12 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: rust
-          # dùng query pack mở rộng thay vì default (default hơi sơ sài)
-          queries: security-extended
+          # FIXED: "security-extended" quét sâu hơn (data-flow xuyên nhiều
+          # hàm/module) — với codebase nhiều async/IPC như Nexus, kết quả
+          # dễ có "threadflow" dài vượt giới hạn GitHub cho phép khi upload
+          # SARIF (10,000 bước/kết quả), khiến cả lần upload bị từ chối.
+          # Dùng bộ mặc định (nhẹ hơn) cho ổn định trước.
+          # queries: security-extended
 
       # CodeQL cho compiled languages (Rust/C/C++/Java/...) cần build
       # thật để "quan sát" — đây là lý do job này build lại project.
