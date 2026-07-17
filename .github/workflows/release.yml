@@ -1,0 +1,54 @@
+name: Build and Release Windows Executable
+
+on:
+  push:
+    tags:
+      - 'v*' # Kích hoạt khi bạn push một tag bắt đầu bằng chữ "v" (ví dụ: v1.0.0, v0.1.0)
+  workflow_dispatch: {} # Cho phép bấm chạy thủ công trên web GitHub
+
+jobs:
+  build-windows:
+    name: Build Windows .exe
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 📦 Cache Cargo registry
+        uses: Swatinem/rust-cache@v2
+
+      - name: 🔨 Build release .exe
+        run: cargo build --release
+
+      - name: 📁 Prepare release artifact
+        shell: pwsh
+        run: |
+          # Tạo một thư mục tạm để đóng gói
+          mkdir artifact
+          # Copy file .exe đã build vào thư mục tạm
+          Copy-Item target/release/nexus.exe artifact/nexus.exe
+          # (Nếu có file .dll hay assets đi kèm, bạn copy vào đây luôn)
+          # Copy-Item nexus-banner.svg artifact/
+          
+          # Nén lại thành file zip
+          Compress-Archive -Path artifact/* -DestinationPath nexus-windows-x64.zip
+
+      - name: 🚀 Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: nexus-windows-x64.zip
+          name: Nexus Browser ${{ github.ref_name }}
+          body: |
+            ## Nexus Browser ${{ github.ref_name }}
+            
+            Download `nexus-windows-x64.zip`, giải nén và chạy `nexus.exe`.
+            
+            **Lưu ý:** Để sử dụng tính năng 1-click Tor/WARP, vui lòng tải về Tor Browser và Cloudflare WARP.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
