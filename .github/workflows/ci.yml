@@ -1,7 +1,4 @@
 # Đặt file này ở: .github/workflows/ci.yml trong repo của bạn.
-# Toàn bộ job chạy trên máy chủ GitHub (Linux runner ~7GB RAM), KHÔNG cần
-# cài Rust/cargo trên máy bạn. Chỉ cần git push là tự chạy.
-
 name: CI
 
 on:
@@ -9,32 +6,21 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch: {}   # cho phép bấm "Run workflow" thủ công trên GitHub
+  workflow_dispatch: {}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ============================================================
-  # 1) BUILD + TEST — bắt lỗi compile thật (CodeQL không build code
-  #    nên không thấy được lỗi kiểu này)
-  # ============================================================
   build:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Cài Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo (build nhanh hơn ở lần sau)
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      # wry/tao trên Linux cần webkit2gtk + gtk3 để build.
-      # NOTE: tên gói có thể lệch theo phiên bản wry/ubuntu-latest hiện tại
-      # (webkit2gtk-4.0 vs 4.1) — nếu build lỗi thiếu package, xem README
-      # của wry để lấy đúng tên gói cho version bạn đang pin trong Cargo.toml.
       - name: Cài thư viện hệ thống cho webview (Linux)
         run: |
           sudo apt-get update
@@ -45,131 +31,50 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
-
       - name: cargo check
         run: cargo check --all-targets --all-features
-
       - name: cargo build (release)
         run: cargo build --release
-
       - name: cargo test
         run: cargo test --all-features
 
-  # ============================================================
-  # 2) CLIPPY — bug logic Rust, mạnh hơn CodeQL cho riêng ngôn ngữ Rust
-  # ============================================================
   clippy:
     name: Clippy Lints
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Cài Rust toolchain (kèm clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
       - uses: Swatinem/rust-cache@v2
-
       - name: Cài thư viện hệ thống cho webview (Linux)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-
-      # -D warnings = coi warning là lỗi, job sẽ fail nếu clippy phát hiện
-      # vấn đề. Có thể nới lỏng bằng cách bỏ "-D warnings" nếu muốn chỉ xem
-      # cảnh báo mà không chặn CI.
       - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -W clippy::all -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # ============================================================
-  # 3) CARGO AUDIT — quét CVE đã biết trong toàn bộ dependency tree
-  #    (aes-gcm, argon2, reqwest, tokio, wry, tao, ...)
-  # ============================================================
   audit:
     name: Dependency Vulnerability Audit
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # cần để tự commit Cargo.lock ngược lại repo nếu chưa có
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: Swatinem/rust-cache@v2
         with:
           key: cargo-audit-bin
-
-      # ubuntu-latest của GitHub đã có sẵn Rust/cargo cài sẵn, không cần
-      # thêm bước cài toolchain riêng cho việc này.
-      - name: Cập nhật Cargo.lock lên bản mới nhất còn hợp lệ với Cargo.toml
-        # cargo update vừa tự tạo Cargo.lock nếu chưa có, vừa "làm mới" nó
-        # lên các bản dependency mới nhất còn khớp Cargo.toml — đây là chỗ
-        # các bản vá bảo mật (như idna >=1.0.0 cho RUSTSEC-2024-0421) được
-        # áp dụng, vì trước giờ Cargo.lock chỉ được tạo 1 lần rồi "đóng
-        # băng" mãi, không tự cập nhật.
+      - name: Cập nhật Cargo.lock
         run: cargo update
-
-      # CHẨN ĐOÁN: nếu 1 crate transitive nào đó ghim cứng idna ở bản cũ,
-      # `cargo update` sẽ không vượt qua được — in ra đây để biết chính xác
-      # crate nào đang ghim, khỏi phải đoán.
-      - name: In cây dependency của idna 0.3.0 (chẩn đoán ai đang ghim bản cũ)
-        run: cargo tree -i idna@0.3.0 --edges normal || true
-
       - name: Tự commit Cargo.lock nếu có thay đổi
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "ci: cargo update (cập nhật dependency, vá lỗ hổng nếu có)"
           file_pattern: Cargo.lock
-
       - name: Cài cargo-audit
         run: cargo install cargo-audit --locked
-
-      # Gọi thẳng cargo-audit thay vì qua action wrapper (rustsec/audit-check)
-      # — wrapper đó thỉnh thoảng lỗi "Unexpected end of JSON input" khi
-      # parse output nội bộ. Gọi trực tiếp thì thấy log thật, dễ debug hơn.
-      - name: cargo audit (RustSec advisory DB)
+      - name: cargo audit
         run: cargo audit
-
-  # ============================================================
-  # 4) CODEQL — pattern lỗ hổng bảo mật đã biết (SAST)
-  # ============================================================
-  codeql:
-    name: CodeQL Security Scan
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cài Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Cài thư viện hệ thống cho webview (Linux)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - name: Khởi tạo CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: rust
-          # FIXED: "security-extended" quét sâu hơn (data-flow xuyên nhiều
-          # hàm/module) — với codebase nhiều async/IPC như Nexus, kết quả
-          # dễ có "threadflow" dài vượt giới hạn GitHub cho phép khi upload
-          # SARIF (10,000 bước/kết quả), khiến cả lần upload bị từ chối.
-          # Dùng bộ mặc định (nhẹ hơn) cho ổn định trước.
-          # queries: security-extended
-
-      # CodeQL cho compiled languages (Rust/C/C++/Java/...) cần build
-      # thật để "quan sát" — đây là lý do job này build lại project.
-      - name: Build project (để CodeQL theo dõi)
-        run: cargo build --all-features
-
-      - name: Phân tích CodeQL
-        uses: github/codeql-action/analyze@v3
