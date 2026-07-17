@@ -701,7 +701,12 @@ mod extensions {
                         Some("document_idle") => "document.readyState === 'complete'",
                         _ => "true",
                     };
-                    js_injection.push_str(&format!(r#"(function(){{if({}){{{}}};document.addEventListener('readystatechange',function(){{if({}){{{}}}});}})();"#, run_condition, js_content, run_condition, js_content));
+                    
+                    // FIX LỖI FORMAT STRING: Sử dụng index để tránh xung đột dấu ngoặc nhọn
+                    js_injection.push_str(&format!(
+                        r#"(function(){{if({0}){{{1}}};document.addEventListener('readystatechange',function(){{if({0}){{{1}}}}});}})();"#,
+                        run_condition, js_content
+                    ));
                 }
             }
             Some(js_injection)
@@ -1058,7 +1063,6 @@ renderTabs();
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
-        // BẢO MẬT: Đã xóa allow-same-origin để ngăn chặn Universal XSS
         let _ = px.send_event(Ev::Js(format!(
             "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-forms allow-presentation';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
             h
@@ -1258,7 +1262,8 @@ fn main() {
         }
     });
     
-    let wb = WebViewBuilder::new()
+    // FIX LỖI WRY 0.35 API: Truyền &w vào new()
+    let wb = WebViewBuilder::new(&w)
         .with_devtools(false)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         .with_html(html())
@@ -1428,7 +1433,8 @@ fn main() {
                             ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:'{}',enabled:{}}}}}));"#, id, enabled))).ok();
                         }
                     },
-                    "ext-msg" => ipx.send_event(Ev::Js(format!("lg('Extension message: {}');", d))).ok(),
+                    // FIX LỖI MATCH ARMS: Bọc trong block {} để trả về () thay vì Option<()>
+                    "ext-msg" => { ipx.send_event(Ev::Js(format!("lg('Extension message: {}');", d))).ok(); },
                     _ => {}
                 }
             });
@@ -1445,7 +1451,6 @@ fn main() {
     
     extensions::api::setup_extension_apis(&wv);
     
-    // Đẩy autoconfig vào async để không block UI
     let px_clone = px.clone();
     rt.spawn(async move {
         let warp_detected = autoconfig::detect_warp();
@@ -1469,7 +1474,6 @@ fn main() {
             Event::UserEvent(Ev::Js(j)) => {
                 js_queue.push(j);
                 if js_queue.len() >= 5 || last_flush.elapsed() > Duration::from_millis(16) {
-                    // Đã fix: Join bằng dấu chấm phẩy để chống vỡ cú pháp JS
                     let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(";"));
                     last_flush = Instant::now();
                 }
