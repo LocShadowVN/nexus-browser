@@ -1,4 +1,5 @@
-<svg width="800" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg">
+<div align="center">
+<svg width="600" height="250" viewBox="0 0 600 250" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#1A1A2E" />
@@ -9,25 +10,30 @@
       <stop offset="100%" stop-color="#00B4D8" />
     </linearGradient>
     <linearGradient id="dragonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#8A8B8E" />
-      <stop offset="100%" stop-color="#4A4B4D" />
+      <stop offset="0%" stop-color="#C0C0C0" />
+      <stop offset="100%" stop-color="#606060" />
     </linearGradient>
   </defs>
   
-  <!-- Rồng quấn quanh khiên (Đường dẫn uốn lượn) -->
-  <path d="M 40 110 C 40 50, 120 30, 160 60 C 200 90, 160 140, 100 150" fill="none" stroke="url(#dragonGrad)" stroke-width="15" stroke-linecap="round" />
-  <path d="M 40 110 C 40 50, 120 30, 160 60 C 200 90, 160 140, 100 150" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.3" />
+  <!-- Đuôi rồng -->
+  <path d="M 140 190 C 80 180, 60 120, 100 100" fill="none" stroke="url(#dragonGrad)" stroke-width="12" stroke-linecap="round" />
+  <!-- Thân rồng -->
+  <path d="M 100 100 C 140 80, 140 140, 100 160 C 60 180, 80 120, 120 100" fill="none" stroke="url(#dragonGrad)" stroke-width="14" stroke-linecap="round" />
+  <!-- Cổ rồng -->
+  <path d="M 120 100 C 140 60, 160 60, 150 100" fill="none" stroke="url(#dragonGrad)" stroke-width="12" stroke-linecap="round" />
   <!-- Đầu rồng -->
-  <path d="M 35 105 L 20 90 L 25 115 L 15 125 L 40 130 Z" fill="url(#dragonGrad)" />
-  
+  <polygon points="140,80 170,90 160,110 130,110" fill="url(#dragonGrad)" />
+  <circle cx="160" cy="95" r="2" fill="#00FFFF" />
+
   <!-- Khiên -->
-  <path d="M 120 40 L 200 40 L 200 110 C 200 140, 160 160, 120 180 C 80 160, 40 140, 40 110 L 40 40 Z" fill="url(#shieldGrad)" stroke="url(#cyanGrad)" stroke-width="4" rx="10" />
+  <path d="M 140 60 L 220 60 L 220 130 C 220 160, 180 180, 140 200 C 100 180, 60 160, 60 130 L 60 60 Z" fill="url(#shieldGrad)" stroke="url(#cyanGrad)" stroke-width="4" rx="10" />
   
   <!-- Chữ N trong khiên -->
-  <text x="120" y="120" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="url(#cyanGrad)" text-anchor="middle">N</text>
+  <text x="140" y="140" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="url(#cyanGrad)" text-anchor="middle">N</text>
   
   <!-- Text Nexus -->
-  <text x="230" y="110" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="url(#cyanGrad)">NEXUS</text>
-  <text x="230" y="150" font-family="Arial, sans-serif" font-size="24" fill="#8A8B8E">SECURE &amp; AI BROWSER</text>
-  <text x="230" y="180" font-family="Arial, sans-serif" font-size="14" fill="#8A8B8E">Powered by Claude | Qwen | GLM 5.2</text>
+  <text x="300" y="110" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="url(#cyanGrad)">NEXUS</text>
+  <text x="300" y="140" font-family="Arial, sans-serif" font-size="18" fill="#8A8B8E">SECURE &amp; AI BROWSER</text>
+  <text x="300" y="180" font-family="Arial, sans-serif" font-size="12" fill="#8A8B8E">Architected &amp; Built by Claude | Qwen | GLM 5.2</text>
 </svg>
+</div>
