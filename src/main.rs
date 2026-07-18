@@ -366,7 +366,30 @@ mod injection {
             "#);
         }
         
-        if cfg.trk { js.push_str(r#"!function(){const t=['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'],n=t=>t.some(t=>(""+t).includes(t)),o=()=>{try{window.top.postMessage(JSON.stringify({a:'inc',p:''}),'*')}catch(t){}},e=window.fetch;window.fetch=function(t,r){return n(t)?(o(),Promise.reject("Blocked")):e.apply(this,arguments)};const i=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(t,n){return n(t)?(o(),undefined):i.apply(this,arguments)},navigator.sendBeacon=()=>!1}()"#); }
+        if cfg.trk { 
+            js.push_str(r#"
+            !function(){
+                const trackers = ['analytics','segment.io','mixpanel','hotjar','facebook.com/tr','trackcmp'];
+                const isTracker = url => trackers.some(t => ("" + url).includes(t));
+                const notify = () => { try { window.top.postMessage(JSON.stringify({a:'inc',p:''}),'*'); } catch(e) {} };
+                
+                const origFetch = window.fetch;
+                window.fetch = function(url, opts) {
+                    if (isTracker(url)) { notify(); return Promise.reject("Blocked"); }
+                    return origFetch.apply(this, arguments);
+                };
+                
+                const origOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    if (isTracker(url)) { notify(); return; }
+                    return origOpen.apply(this, arguments);
+                };
+                
+                navigator.sendBeacon = () => false;
+            }();
+            "#); 
+        }
+        
         if cfg.cookie { js.push_str(r#"!function(){const t=Object.getOwnPropertyDescriptor(Document.prototype,"cookie");t&&(Object.defineProperty(document,"cookie",{set(n){/(_ga|track|fbp)/.test(n)||t.set.call(this,n)},get(){return t.get.call(this)}}))}()"#); }
         if cfg.anti_fp { js.push_str(r#"!function(){HTMLCanvasElement.prototype.toDataURL=()=>"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";const t=WebGLRenderingContext.prototype.getParameter;WebGLRenderingContext.prototype.getParameter=function(n){return 37445===n?"Nexus":37446===n?"Nexus":t.apply(this,arguments)},Object.defineProperty(navigator,"hardwareConcurrency",{get:()=>4}),Object.defineProperty(navigator,"deviceMemory",{get:()=>4})}()"#); }
         
@@ -554,7 +577,7 @@ mod ai {
         };
         
         if ai.endpoint.is_empty() || ai.key.is_empty() {
-            return "⚠ Chưa cấu hình AI. Nhập Endpoint + API Key + Model trong panel AI.".into();
+            return "⚠ AI not configured. Enter Endpoint + API Key + Model in the AI panel.".into();
         }
         
         let client = {
@@ -581,10 +604,10 @@ mod ai {
                 Ok(text) => serde_json::from_str::<JsonValue>(&text)
                     .ok()
                     .and_then(|v| v["choices"][0]["message"]["content"].as_str().map(String::from))
-                    .unwrap_or_else(|| "⚠ Phản hồi AI không hợp lệ.".into()),
-                Err(_) => "⚠ Phản hồi AI không hợp lệ.".into(),
+                    .unwrap_or_else(|| "⚠ Invalid AI response.".into()),
+                Err(_) => "⚠ Invalid AI response.".into(),
             },
-            Err(_) => "⚠ Phản hồi AI không hợp lệ.".into(),
+            Err(_) => "⚠ Invalid AI response.".into(),
         };
         
         {
@@ -871,8 +894,8 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 .tab-title{flex:1;overflow:hidden;text-overflow:ellipsis;margin-right:8px;font-size:13px}
 .tab-close{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:var(--t3);font-size:16px}
 .tab-close:hover{background:rgba(0,0,0,0.1);color:var(--t1)}
-#new-tab-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
-#new-tab-btn:hover{background:rgba(0,0,0,0.05)}
+#new-tab-btn,#new-incognito-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
+#new-tab-btn:hover,#new-incognito-btn:hover{background:rgba(0,0,0,0.05)}
 
 #toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10}
 .nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
@@ -889,7 +912,6 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #workspace{flex:1;background:#fff;overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
-/* Sửa lỗi z-index: Sidebar phải cao hơn toolbar và tabs-bar */
 #sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:1000;overflow-y:auto;transition:right 0.3s}
 #sidebar.open{right:0}
 .sidebar-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
@@ -928,7 +950,6 @@ input:checked+.slider:before{transform:translateX(16px)}
 .popup-btn{flex:1;padding:8px;border:1px solid var(--brd);background:#fff;border-radius:4px;cursor:pointer;font-size:13px}
 .popup-btn.primary{background:var(--acc);color:#fff;border:none}
 
-/* Lịch sử */
 .history-item{display:block;width:100%;text-align:left;padding:8px;border-bottom:1px solid var(--brd);cursor:pointer;font-size:13px;color:var(--t1)}
 .history-item:hover{background:var(--input)}
 </style></head><body>
@@ -938,84 +959,85 @@ input:checked+.slider:before{transform:translateX(16px)}
     <button class="nav-btn" onclick="sr('back')">←</button>
     <button class="nav-btn" onclick="sr('fwd')">→</button>
     <button class="nav-btn" onclick="sr('ref')">⟳</button>
-    <input type="text" id="url-bar" placeholder="Tìm kiếm Google hoặc nhập URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
-    <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" title="Lưu trang">★</button>
-    <button class="tool-btn" onclick="toggleModal('history-modal')" title="Lịch sử">🕒</button>
-    <button class="tool-btn" onclick="toggleModal('vault')" title="Kho mật khẩu">🔑</button>
-    <button class="tool-btn" onclick="toggleModal('ai-modal')" title="Trợ lý AI">🤖</button>
-    <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" title="Console">💻</button>
-    <button class="tool-btn" onclick="toggleSidebar()" title="Menu">≡</button>
+    <input type="text" id="url-bar" data-i18n-placeholder="url_ph" placeholder="Search Google or type URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" data-i18n-title="bookmark" title="Bookmark">★</button>
+    <button class="tool-btn" onclick="toggleModal('history-modal')" data-i18n-title="history" title="History">🕒</button>
+    <button class="tool-btn" onclick="toggleModal('vault')" data-i18n-title="vault" title="Vault">🔑</button>
+    <button class="tool-btn" onclick="toggleModal('ai-modal')" data-i18n-title="ai" title="AI Assistant">🤖</button>
+    <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" data-i18n-title="console" title="Console">💻</button>
+    <button class="tool-btn" onclick="toggleLang()" id="lang-btn" title="Language">🇻🇳</button>
+    <button class="tool-btn" onclick="toggleSidebar()" data-i18n-title="menu" title="Menu">≡</button>
   </div>
-  <div id="bookmarks-bar"><div style="color:var(--t3);font-size:13px;padding:4px 10px;">Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.</div></div>
+  <div id="bookmarks-bar"><div class="bm-empty" data-i18n="empty_bm" style="color:var(--t3);font-size:13px;padding:4px 10px;">No bookmarks. Click ★ to save.</div></div>
 
   <div id="workspace"></div>
   <div id="dev-console"></div>
   <div id="sidebar">
     <div class="sidebar-header">
-      <span>Cài đặt Nexus</span>
+      <span data-i18n="settings">Nexus Settings</span>
       <button class="sidebar-close" onclick="toggleSidebar()">&times;</button>
     </div>
-    <div class="sidebar-section"><div class="section-title">Kết nối</div>
-      <div class="row"><span>Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Mạng Tor</span><label class="switch"><input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)"><span class="slider"></span></label></div>
+    <div class="sidebar-section"><div class="section-title" data-i18n="connection">CONNECTION</div>
+      <div class="row"><span data-i18n="warp">Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="tor">Tor Network</span><label class="switch"><input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section"><div class="section-title">Bảo vệ</div>
-      <div class="row"><span>Chặn Quảng cáo</span><label class="switch"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Chàn Tracker</span><label class="switch"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Bảo vệ Cookie</span><label class="switch"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Chặn Domain</span><label class="switch"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Anti-Fingerprint</span><label class="switch"><input type="checkbox" checked onchange="ts('anti_fp',this.checked)"><span class="slider"></span></label></div>
+    <div class="sidebar-section"><div class="section-title" data-i18n="shields">SHIELDS</div>
+      <div class="row"><span data-i18n="ad">Ad Blocker</span><label class="switch"><input type="checkbox" checked onchange="ts('ad',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="trk">Tracker Block</span><label class="switch"><input type="checkbox" checked onchange="ts('trk',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="cookie">Cookie Shield</span><label class="switch"><input type="checkbox" checked onchange="ts('cookie',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="sink">Domain Sinkhole</span><label class="switch"><input type="checkbox" checked onchange="ts('sink',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="anti_fp">Anti-Fingerprint</span><label class="switch"><input type="checkbox" checked onchange="ts('anti_fp',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section"><div class="section-title">Mật khẩu</div>
-      <div class="row"><span>Tự động lưu</span><label class="switch"><input type="checkbox" checked onchange="ts('auto-save',this.checked)"><span class="slider"></span></label></div>
-      <div class="row"><span>Gợi ý mật khẩu</span><label class="switch"><input type="checkbox" checked onchange="ts('pass-suggest',this.checked)"><span class="slider"></span></label></div>
+    <div class="sidebar-section"><div class="section-title" data-i18n="passwords">PASSWORDS</div>
+      <div class="row"><span data-i18n="auto_save">Auto Save</span><label class="switch"><input type="checkbox" checked onchange="ts('auto-save',this.checked)"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="pass_suggest">Password Suggest</span><label class="switch"><input type="checkbox" checked onchange="ts('pass-suggest',this.checked)"><span class="slider"></span></label></div>
     </div>
-    <div class="sidebar-section"><div class="section-title">Đồng bộ hóa</div>
+    <div class="sidebar-section"><div class="section-title" data-i18n="sync">SYNC</div>
       <div class="row"><span>Chrome</span><label class="switch"><input type="checkbox" onchange="ts('sync-chrome',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Firefox</span><label class="switch"><input type="checkbox" onchange="ts('sync-firefox',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Edge</span><label class="switch"><input type="checkbox" onchange="ts('sync-edge',this.checked)"><span class="slider"></span></label></div>
-      <button class="modal-btn primary" onclick="sr('sync-now')">Đồng bộ ngay</button>
+      <button class="modal-btn primary" onclick="sr('sync-now')" data-i18n="sync_now">Sync Now</button>
     </div>
   </div>
 
   <div id="history-modal" class="modal">
-    <div class="modal-title">Lịch sử duyệt web</div>
+    <div class="modal-title" data-i18n="history_title">History</div>
     <div id="history-list" style="max-height:300px;overflow-y:auto;margin-bottom:20px;"></div>
-    <button class="modal-btn" onclick="toggleModal('history-modal')">Đóng</button>
+    <button class="modal-btn" onclick="toggleModal('history-modal')" data-i18n="close">Close</button>
   </div>
 
   <div id="vault" class="modal">
-    <div class="modal-title">Kho Mật Khẩu</div>
-    <input type="password" id="v-master" class="modal-input" placeholder="Mật khẩu chính (Master Password)">
-    <input type="text" id="v-domain" class="modal-input" placeholder="Tên miền">
-    <input type="text" id="v-user" class="modal-input" placeholder="Tên đăng nhập">
-    <input type="password" id="v-pass" class="modal-input" placeholder="Mật khẩu">
-    <button class="modal-btn primary" onclick="vAct('save')">Lưu</button>
-    <button class="modal-btn" onclick="vAct('get')">Lấy mật khẩu</button>
-    <button class="modal-btn" onclick="vAct('gen')">Tạo mật khẩu</button>
-    <button class="modal-btn" onclick="toggleModal('vault')">Đóng</button>
+    <div class="modal-title" data-i18n="vault_title">Vault</div>
+    <input type="password" id="v-master" class="modal-input" data-i18n-placeholder="master_ph" placeholder="Master Password">
+    <input type="text" id="v-domain" class="modal-input" data-i18n-placeholder="domain_ph" placeholder="Domain">
+    <input type="text" id="v-user" class="modal-input" data-i18n-placeholder="user_ph" placeholder="Username">
+    <input type="password" id="v-pass" class="modal-input" data-i18n-placeholder="pass_ph" placeholder="Password">
+    <button class="modal-btn primary" onclick="vAct('save')" data-i18n="save">Save</button>
+    <button class="modal-btn" onclick="vAct('get')" data-i18n="retrieve">Retrieve</button>
+    <button class="modal-btn" onclick="vAct('gen')" data-i18n="gen">Generate</button>
+    <button class="modal-btn" onclick="toggleModal('vault')" data-i18n="close">Close</button>
     <div id="v-res" style="margin-top:12px;font-size:13px;color:var(--t2)"></div>
   </div>
 
   <div id="ai-modal" class="modal">
-    <div class="modal-title">Trợ lý AI</div>
+    <div class="modal-title" data-i18n="ai_title">AI Assistant</div>
     <input type="text" id="ai-endpoint" class="modal-input" placeholder="API Endpoint">
     <input type="password" id="ai-key" class="modal-input" placeholder="API Key">
-    <input type="text" id="ai-model" class="modal-input" placeholder="Model (vd: gpt-4o-mini)">
-    <button class="modal-btn primary" onclick="aiCfg()">Lưu cấu hình</button>
-    <textarea id="ai-prompt" class="modal-input" rows="3" placeholder="Nhập câu hỏi..."></textarea>
-    <button class="modal-btn" onclick="aiAsk()">Hỏi AI</button>
+    <input type="text" id="ai-model" class="modal-input" placeholder="Model (e.g., gpt-4o-mini)">
+    <button class="modal-btn primary" onclick="aiCfg()" data-i18n="save">Save</button>
+    <textarea id="ai-prompt" class="modal-input" rows="3" data-i18n-placeholder="ask_ph" placeholder="Ask anything..."></textarea>
+    <button class="modal-btn" onclick="aiAsk()" data-i18n="ask">Ask</button>
     <div id="ai-log" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:13px"></div>
-    <button class="modal-btn" onclick="toggleModal('ai-modal')">Đóng</button>
+    <button class="modal-btn" onclick="toggleModal('ai-modal')" data-i18n="close">Close</button>
   </div>
 
   <div id="pass-popup">
-    <div class="popup-header"><div class="popup-title">Lưu mật khẩu?</div><span class="popup-close" onclick="hidePassPopup()">&times;</span></div>
+    <div class="popup-header"><div class="popup-title" data-i18n="save_pass">Save Password?</div><span class="popup-close" onclick="hidePassPopup()">&times;</span></div>
     <div class="popup-domain" id="suggest-domain"></div>
     <div class="popup-pass" id="suggest-pass"></div>
     <div class="popup-actions">
-      <button class="popup-btn primary" onclick="savePassPopup()">Lưu</button>
-      <button class="popup-btn" onclick="genPassPopup()">Tạo mới</button>
+      <button class="popup-btn primary" onclick="savePassPopup()" data-i18n="save">Save</button>
+      <button class="popup-btn" onclick="genPassPopup()" data-i18n="gen_new">Generate New</button>
     </div>
   </div>
 </div>
@@ -1023,13 +1045,55 @@ input:checked+.slider:before{transform:translateX(16px)}
 let tabs = [{name:'New Tab', url:'nexus://home', frozen:false}];
 let activeTab = 0;
 let currentMasterPass = '';
+let lang = 'en';
+
+const i18n = {
+  en: {
+    url_ph: "Search Google or type URL", bookmark: "Bookmark", history: "History", vault: "Vault", ai: "AI Assistant", console: "Console", menu: "Menu",
+    empty_bm: "No bookmarks. Click ★ to save.",
+    settings: "Nexus Settings", connection: "CONNECTION", warp: "Cloudflare WARP", tor: "Tor Network",
+    shields: "SHIELDS", ad: "Ad Blocker", trk: "Tracker Block", cookie: "Cookie Shield", sink: "Domain Sinkhole", anti_fp: "Anti-Fingerprint",
+    passwords: "PASSWORDS", auto_save: "Auto Save", pass_suggest: "Password Suggest",
+    sync: "SYNC", sync_now: "Sync Now",
+    history_title: "History", empty_hist: "No history yet.",
+    vault_title: "Vault", master_ph: "Master Password", domain_ph: "Domain", user_ph: "Username", pass_ph: "Password",
+    save: "Save", retrieve: "Retrieve", gen: "Generate", close: "Close",
+    ai_title: "AI Assistant", ask_ph: "Ask anything...", ask: "Ask",
+    save_pass: "Save Password?", gen_new: "Generate New",
+    saved_bm: "Saved to bookmarks", err_save_bm: "Cannot save this page",
+    master_req: "Please enter Master Password in Vault before saving!", synced: "Synced: Chrome({}), Firefox({}), Edge({})"
+  },
+  vi: {
+    url_ph: "Tìm kiếm Google hoặc nhập URL", bookmark: "Lưu trang", history: "Lịch sử", vault: "Kho mật khẩu", ai: "Trợ lý AI", console: "Console", menu: "Menu",
+    empty_bm: "Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.",
+    settings: "Cài đặt Nexus", connection: "KẾT NỐI", warp: "Cloudflare WARP", tor: "Mạng Tor",
+    shields: "LÁ CHẮN", ad: "Chặn Quảng cáo", trk: "Chặn Tracker", cookie: "Bảo vệ Cookie", sink: "Chặn Domain", anti_fp: "Anti-Fingerprint",
+    passwords: "MẬT KHẨU", auto_save: "Tự động lưu", pass_suggest: "Gợi ý mật khẩu",
+    sync: "ĐỒNG BỘ HÒA", sync_now: "Đồng bộ ngay",
+    history_title: "Lịch sử duyệt web", empty_hist: "Chưa có lịch sử.",
+    vault_title: "Kho Mật Khẩu", master_ph: "Mật khẩu chính", domain_ph: "Tên miền", user_ph: "Tên đăng nhập", pass_ph: "Mật khẩu",
+    save: "Lưu", retrieve: "Lấy mật khẩu", gen: "Tạo mật khẩu", close: "Đóng",
+    ai_title: "Trợ lý AI", ask_ph: "Nhập câu hỏi...", ask: "Hỏi AI",
+    save_pass: "Lưu mật khẩu?", gen_new: "Tạo mới",
+    saved_bm: "Đã lưu trang vào Bookmark", err_save_bm: "Không thể lưu trang này",
+    master_req: "Vui lòng nhập Master Password trong Vault trước khi lưu!", synced: "Đồng bộ: Chrome({}), Firefox({}), Edge({})"
+  }
+};
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { const k = el.getAttribute('data-i18n'); if(i18n[lang][k]) el.textContent = i18n[lang][k]; });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { const k = el.getAttribute('data-i18n-placeholder'); if(i18n[lang][k]) el.placeholder = i18n[lang][k]; });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { const k = el.getAttribute('data-i18n-title'); if(i18n[lang][k]) el.title = i18n[lang][k]; });
+  document.getElementById('lang-btn').textContent = lang === 'en' ? '🇻🇳' : '🇬🇧';
+}
+function toggleLang() { lang = lang === 'en' ? 'vi' : 'en'; applyLang(); }
 
 function renderTabs() {
   document.getElementById('tabs-bar').innerHTML = tabs.map((t,i)=>`
     <div class="tab ${i===activeTab?'active':''} ${t.frozen?'frozen':''}" onclick="switchTab(${i})">
       <span class="tab-title">${t.frozen?'❄ ':''}${t.name}</span>
       <span class="tab-close" onclick="closeTab(${i},event)">&times;</span>
-    </div>`).join('') + `<div id="new-tab-btn" onclick="newTab('normal')">+</div>`;
+    </div>`).join('') + `<div id="new-tab-btn" onclick="newTab('normal')" title="New Tab">+</div><div id="new-incognito-btn" onclick="newTab('incognito')" title="Incognito">🕵️</div>`;
 }
 function newTab(m) { sr('new-tab',m); }
 function closeTab(i,e) { e.stopPropagation(); if(tabs.length>1) sr('close-tab',i); }
@@ -1038,7 +1102,7 @@ function switchTab(i) { sr('switch-tab',i); }
 function renderBookmarks(bms) {
   const bar = document.getElementById('bookmarks-bar');
   if(!bms || bms.length === 0) {
-    bar.innerHTML = '<div style="color:var(--t3);font-size:13px;padding:4px 10px;">Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.</div>';
+    bar.innerHTML = `<div class="bm-empty" data-i18n="empty_bm" style="color:var(--t3);font-size:13px;padding:4px 10px;">${i18n[lang].empty_bm}</div>`;
     return;
   }
   bar.innerHTML = bms.map(b => `<div class="bm-item" onclick="sr('nav','${b.url}')">${b.title}</div>`).join('');
@@ -1047,7 +1111,7 @@ function renderBookmarks(bms) {
 function renderHistory(hist) {
   const list = document.getElementById('history-list');
   if(!hist || hist.length === 0) {
-    list.innerHTML = '<p style="color:var(--t2)">Chưa có lịch sử.</p>';
+    list.innerHTML = `<p style="color:var(--t2)">${i18n[lang].empty_hist}</p>`;
     return;
   }
   list.innerHTML = hist.reverse().map(h => `<div class="history-item" onclick="sr('nav','${h.url}');toggleModal('history-modal')">${h.title} <span style="color:var(--t3);font-size:11px;">(${new Date(h.time*1000).toLocaleString()})</span></div>`).join('');
@@ -1074,7 +1138,7 @@ function showPassPopup(d) {
 function hidePassPopup() { document.getElementById('pass-popup').style.display = 'none'; }
 function savePassPopup() {
   if (window.passData) {
-    if (!currentMasterPass) { alert('Vui lòng nhập Master Password trong Vault trước khi lưu!'); toggleModal('vault'); return; }
+    if (!currentMasterPass) { alert(i18n[lang].master_req); toggleModal('vault'); return; }
     sr('save-password', {url: window.passData.url, username: window.passData.username, password: window.passData.password, master: currentMasterPass});
     hidePassPopup();
   }
@@ -1108,6 +1172,8 @@ window.updateTabs = function(d) {
   let url = tabs[activeTab].url;
   document.getElementById('url-bar').value = url === 'nexus://home' ? '' : url;
 }
+
+applyLang();
 renderTabs();
 </script></body></html>"###.into()
 }
@@ -1117,7 +1183,6 @@ renderTabs();
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
-        // Sửa lỗi web vỡ: Thêm lại allow-same-origin để trang web load CSS/JS/Hình ảnh
         let _ = px.send_event(Ev::Js(format!(
             "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
             h
@@ -1145,7 +1210,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         .search:focus { border-color: #1a73e8; }
         </style></head><body>
         <h1>Nexus</h1>
-        <input type="text" class="search" placeholder="Tìm kiếm trên Google..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
+        <input type="text" class="search" placeholder="Search Google..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
         </body></html>
         "#;
         render_page(home_html, &url, px);
@@ -1162,9 +1227,9 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
 
     if cfg.sinkhole && sinkhole::check(&url) {
         let safe_url = url.replace('\'', "\\'").replace('\n', " ");
-        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE chặn: {}');", safe_url)));
+        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE blocked: {}');", safe_url)));
         let blocked = { let mut g = st.write().await; g.blocked += 1; g.blocked };
-        let _ = px.send_event(Ev::Js(format!("lg('Tổng số chặn: {}');", blocked)));
+        let _ = px.send_event(Ev::Js(format!("lg('Total blocked: {}');", blocked)));
         return;
     }
     
@@ -1235,7 +1300,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
             render_page(&html, &clean_url, px);
         } else {
             let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
-            let _ = px.send_event(Ev::Js(format!("lg('Tải xuống: {}');", safe_url)));
+            let _ = px.send_event(Ev::Js(format!("lg('Downloading: {}');", safe_url)));
             tokio::spawn(dl::turbo(clean_url.clone(), st.clone()));
             return;
         }
@@ -1263,7 +1328,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         }
     } else {
         let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
-        let _ = px.send_event(Ev::Js(format!("lg('Lỗi tải: {}');", safe_url)));
+        let _ = px.send_event(Ev::Js(format!("lg('Failed to load: {}');", safe_url)));
     }
 }
 
@@ -1388,7 +1453,7 @@ fn main() {
                     }
                     "bookmark" => if let Some(url) = d.as_str() {
                         if url.is_empty() || url == "nexus://home" { 
-                            ipx.send_event(Ev::Js("lg('Không thể lưu trang này');".into())).ok();
+                            ipx.send_event(Ev::Js("lg('Cannot save this page');".into())).ok();
                             return; 
                         }
                         let mut g = ist.write().await;
@@ -1400,12 +1465,12 @@ fn main() {
                         if let Ok(b) = serde_json::to_string(&bms) {
                             ipx.send_event(Ev::Js(format!(r#"if(window.renderBookmarks)window.renderBookmarks({})"#, b))).ok();
                         }
-                        ipx.send_event(Ev::Js("lg('Đã lưu trang vào Bookmark');".into())).ok();
+                        ipx.send_event(Ev::Js("lg('Saved to bookmarks');".into())).ok();
                     }
                     "back" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_back() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
                     "fwd" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_fwd() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
                     "ref" => { let g = ist.read().await; if let Some(u) = g.active_tab().current() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
-                    "inc" => { let c = { let mut g = ist.write().await; g.blocked += 1; g.blocked }; ipx.send_event(Ev::Js(format!("lg('Đã chặn request: {}');", c))).ok(); }
+                    "inc" => { let c = { let mut g = ist.write().await; g.blocked += 1; g.blocked }; ipx.send_event(Ev::Js(format!("lg('Blocked request: {}');", c))).ok(); }
                     "shld" => if let (Some(s), Some(v)) = (d["s"].as_str(), d["v"].as_bool()) {
                         let mut g = ist.write().await;
                         { let tab = g.active_tab_mut(); match s {
@@ -1421,7 +1486,7 @@ fn main() {
                     "ai_cfg" => if let (Some(e), Some(k), Some(m)) = (d["e"].as_str(), d["k"].as_str(), d["m"].as_str()) {
                         let mut g = ist.write().await; let tab = g.active_tab_mut();
                         tab.ai.endpoint = e.into(); tab.ai.key = k.into(); tab.ai.model = m.into();
-                        ipx.send_event(Ev::Js("lg('Đã lưu cấu hình AI');".into())).ok();
+                        ipx.send_event(Ev::Js("lg('AI config saved');".into())).ok();
                     },
                     "ai" => if let Some(p) = d.as_str() {
                         let r = ai::ask(p.into(), ist.clone()).await;
@@ -1442,19 +1507,19 @@ fn main() {
                                         }); vault.clone()
                                     } else { Vec::new() }
                                 };
-                                let msg = if !entries.is_empty() && vault::save(&entries) { "vRes('Đã lưu thành công');" } else { "vRes('Lỗi khi lưu');" };
+                                let msg = if !entries.is_empty() && vault::save(&entries) { "vRes('Saved successfully');" } else { "vRes('Save failed');" };
                                 ipx.send_event(Ev::Js(msg.into())).ok();
                             }
                         } else if act == "get" {
                             let found = { let g = ist.read().await; g.active_tab().vault.as_ref().and_then(|v| v.iter().find(|e| e.domain == d).map(|e| (e.user.clone(), e.pass.clone(), e.nonce.clone(), e.salt.clone()))) };
                             if let Some((user, pass, nonce, salt)) = found {
                                 if let Some(dec) = vault::decrypt(&pass, &nonce, &salt, &master) {
-                                    if let Ok(d) = serde_json::to_string(&dec) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Mật khẩu cho {}');", d, user.replace('\'', "")))).ok(); }
-                                } else { ipx.send_event(Ev::Js("vRes('Sai mật khẩu chính');".into())).ok(); }
-                            } else { ipx.send_event(Ev::Js("vRes('Không tìm thấy');".into())).ok(); }
+                                    if let Ok(d) = serde_json::to_string(&dec) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Password for {}');", d, user.replace('\'', "")))).ok(); }
+                                } else { ipx.send_event(Ev::Js("vRes('Wrong master password');".into())).ok(); }
+                            } else { ipx.send_event(Ev::Js("vRes('Not found');".into())).ok(); }
                         } else if act == "gen" {
                             let gpw = vault::generate(16);
-                            if let Ok(g) = serde_json::to_string(&gpw) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Đã tạo mật khẩu');", g))).ok(); }
+                            if let Ok(g) = serde_json::to_string(&gpw) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Generated');", g))).ok(); }
                         }
                     },
                     "new-tab" => if let Some(m) = d.as_str() {
@@ -1518,7 +1583,7 @@ fn main() {
                         let sync_snapshot = g.sync.clone();
                         { let tab = &mut g.tabs[active_tab]; sync_snapshot.sync_to_active_tab(tab); }
                         if let Some(vault) = &g.tabs[active_tab].vault { vault::save(vault); }
-                        ipx.send_event(Ev::Js(format!("lg('Đồng bộ: Chrome({}), Firefox({}), Edge({})');", c, f, e))).ok();
+                        ipx.send_event(Ev::Js(format!("lg('Synced: Chrome({}), Firefox({}), Edge({})');", c, f, e))).ok();
                     },
                     "ext-list" => {
                         let extensions = extensions::load_all_extensions().await;
@@ -1560,7 +1625,7 @@ fn main() {
         *cf = ControlFlow::Wait;
         match ev {
             Event::NewEvents(StartCause::Init) => {
-                px.send_event(Ev::Js("lg('Nexus Core đã khởi động');".into())).ok();
+                px.send_event(Ev::Js("lg('Nexus Core initialized');".into())).ok();
                 handle_for_loop.spawn({ let (st, px) = (st.clone(), px.clone()); async move { 
                     let st_read = st.read().await;
                     let first_url = st_read.tabs[0].url.clone();
