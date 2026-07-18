@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Browser - Secure & AI Native</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --text-color: #1a202c;
+            --card-bg: #ffffff;
+            --accent: #3182ce;
+            --accent-hover: #2c5282;
+            --border: #e2e8f0;
+            --shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+
+        html.dark {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --card-bg: #161b22;
+            --accent: #58a6ff;
+            --accent-hover: #1f6feb;
+            --border: #30363d;
+            --shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); transition: background 0.3s, color 0.3s; overflow-x: hidden; }
+        
+        /* NAVBAR */
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 5%; border-bottom: 1px solid var(--border); position: sticky; top: 0; background-color: var(--bg-color); z-index: 100; backdrop-filter: blur(10px); }
+        .logo { font-size: 1.5rem; font-weight: 800; background: linear-gradient(135deg, #00FFFF, #00B4D8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-right { display: flex; align-items: center; gap: 20px; }
+        .nav-link { color: var(--text-color); text-decoration: none; font-weight: 500; opacity: 0.8; transition: 0.2s; display: flex; align-items: center; gap: 6px; }
+        .nav-link:hover { opacity: 1; color: var(--accent); }
+        .theme-toggle { background: var(--card-bg); border: 1px solid var(--border); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-color); transition: 0.3s; }
+        .theme-toggle:hover { transform: rotate(20deg); border-color: var(--accent); }
+
+        /* HERO */
+        .hero { text-align: center; padding: 100px 20px; max-width: 800px; margin: 0 auto; }
+        .hero h1 { font-size: 4rem; margin-bottom: 20px; line-height: 1.1; }
+        .hero h1 span { background: linear-gradient(135deg, #00FFFF, #00B4D8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hero p { font-size: 1.2rem; color: var(--text-color); opacity: 0.8; margin-bottom: 40px; }
+        
+        .btn-primary { background: var(--accent); color: #fff; padding: 16px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1rem; display: inline-flex; align-items: center; gap: 10px; transition: 0.3s; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 180, 216, 0.3); }
+        .btn-primary:hover { background: var(--accent-hover); transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0, 180, 216, 0.4); }
+        .btn-secondary { background: transparent; color: var(--text-color); padding: 16px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1rem; display: inline-flex; align-items: center; gap: 10px; transition: 0.3s; border: 1px solid var(--border); cursor: pointer; margin-left: 15px; }
+        .btn-secondary:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-3px); }
+        .os-text { margin-top: 15px; font-size: 0.9rem; opacity: 0.6; }
+
+        /* FEATURES */
+        .section-title { text-align: center; font-size: 2.5rem; margin-bottom: 60px; font-weight: 700; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; max-width: 1000px; margin: 0 auto 100px auto; padding: 0 20px; }
+        .card { background: var(--card-bg); border: 1px solid var(--border); padding: 30px; border-radius: 12px; box-shadow: var(--shadow); transition: transform 0.3s; }
+        .card:hover { transform: translateY(-5px); border-color: var(--accent); }
+        .card svg { width: 40px; height: 40px; color: var(--accent); margin-bottom: 20px; }
+        .card h3 { font-size: 1.3rem; margin-bottom: 10px; }
+        .card p { line-height: 1.6; opacity: 0.8; }
+
+        /* OPEN SOURCE SECTION */
+        .opensource { background: var(--card-bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 80px 20px; text-align: center; }
+        .opensource-content { max-width: 700px; margin: 0 auto; }
+        .opensource h2 { font-size: 2.5rem; margin-bottom: 20px; }
+        .opensource p { font-size: 1.1rem; line-height: 1.6; opacity: 0.8; margin-bottom: 40px; }
+
+        footer { text-align: center; padding: 40px; opacity: 0.6; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="logo">NEXUS</div>
+        <div class="nav-right">
+            <a href="https://github.com/LocShadowVN/nexus-browser" target="_blank" class="nav-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                Source Code
+            </a>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                <svg id="moonIcon" style="display:none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <h1>The <span>Next-Generation</span> Browser</h1>
+        <p>Built entirely from the ground up in Rust. Experience ultra-security, high performance, and deeply integrated AI natively.</p>
+        
+        <a href="https://github.com/LocShadowVN/nexus-browser/releases/latest/download/nexus-windows-x64.zip" class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download for Windows
+        </a>
+        <a href="https://github.com/LocShadowVN/nexus-browser" target="_blank" class="btn-secondary">
+            View Source
+        </a>
+        <div class="os-text">Windows 10/11 (64-bit) • ~5MB • No installer required</div>
+    </div>
+
+    <div class="features">
+        <h2 class="section-title" style="grid-column: 1 / -1;">Core Features</h2>
+        
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <h3>Military-Grade Security</h3>
+            <p>AES-256-GCM encryption & Argon2id hashing. Blocks trackers, ads, and spoofs browser fingerprints right out of the box.</p>
+        </div>
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+            <h3>Native AI Assistant</h3>
+            <p>Powered by Claude, Qwen, and GLM 5.2. Your AI copilot is always available directly in the toolbar.</p>
+        </div>
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <h3>Extreme Performance</h3>
+            <p>Written in Rust, using minimal RAM. Auto-freezes inactive tabs and downloads files with 16 concurrent threads.</p>
+        </div>
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+            <h3>Anonymity Layer</h3>
+            <p>1-click integration for Tor Network and Cloudflare WARP. Enforces HTTPS and strips tracking parameters from URLs.</p>
+        </div>
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+            <h3>Productivity Tools</h3>
+            <p>Built-in bookmarks bar, local history search, and session restore. Never lose your tabs again.</p>
+        </div>
+        <div class="card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+            <h3>No Telemetry</h3>
+            <p>Zero data collection. What you browse stays on your machine. 100% transparent and auditable code.</p>
+        </div>
+    </div>
+
+    <section class="opensource">
+        <div class="opensource-content">
+            <h2>100% Open Source</h2>
+            <p>Transparency is at the core of Nexus. There is no hidden telemetry, no secret data collection, and no closed-source black boxes. The entire engine is written in Rust and is available for anyone to inspect, modify, and build upon. Join us in making the web a safer and more private place.</p>
+            <a href="https://github.com/LocShadowVN/nexus-browser" target="_blank" class="btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                View Source on GitHub
+            </a>
+        </div>
+    </section>
+
+    <footer>
+        <p>Made with Rust. &copy; 2024 Nexus Project.</p>
+    </footer>
+
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = html.classList.toggle('dark');
+            document.getElementById('sunIcon').style.display = isDark ? 'none' : 'block';
+            document.getElementById('moonIcon').style.display = isDark ? 'block' : 'none';
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        // Load saved theme
+        if (localStorage.getItem('theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.getElementById('sunIcon').style.display = 'none';
+            document.getElementById('moonIcon').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
