@@ -1,17 +1,31 @@
-name: Build and Release Windows Executable
+name: Build and Release Multi-Platform
 
 on:
   push:
     tags:
-      - 'v*' # Kích hoạt khi bạn push một tag bắt đầu bằng chữ "v" (ví dụ: v1.0.0, v0.1.0)
-  workflow_dispatch: {} # Cho phép bấm chạy thủ công trên web GitHub
+      - 'v*'
+  workflow_dispatch: {}
 
 jobs:
-  build-windows:
-    name: Build Windows .exe
-    runs-on: windows-latest
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     permissions:
-      contents: write 
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: nexus.exe
+            asset_name: nexus-windows-x64.zip
+          - os: ubuntu-latest
+            artifact_name: nexus
+            asset_name: nexus-linux-x64.zip
+          - os: macos-latest
+            artifact_name: nexus
+            asset_name: nexus-macos-x64.zip
+
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -22,33 +36,51 @@ jobs:
       - name: 📦 Cache Cargo registry
         uses: Swatinem/rust-cache@v2
 
-      - name: 🔨 Build release .exe
+      - name: 🐧 Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: 🔨 Build release
         run: cargo build --release
 
-      - name: 📁 Prepare release artifact
+      - name: 📁 Prepare and Package artifact (Windows)
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          # Tạo một thư mục tạm để đóng gói
           mkdir artifact
-          # Copy file .exe đã build vào thư mục tạm
-          Copy-Item target/release/nexus.exe artifact/nexus.exe
-          # (Nếu có file .dll hay assets đi kèm, bạn copy vào đây luôn)
-          # Copy-Item nexus-banner.svg artifact/
-          
-          # Nén lại thành file zip
-          Compress-Archive -Path artifact/* -DestinationPath nexus-windows-x64.zip
+          Copy-Item target/release/nexus.exe artifact/
+          Compress-Archive -Path artifact/* -DestinationPath ${{ matrix.asset_name }}
+
+      - name: 📁 Prepare and Package artifact (Linux & macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          mkdir artifact
+          cp target/release/${{ matrix.artifact_name }} artifact/
+          zip -r ${{ matrix.asset_name }} artifact
 
       - name: 🚀 Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: nexus-windows-x64.zip
+          files: ${{ matrix.asset_name }}
           name: Nexus Browser ${{ github.ref_name }}
           body: |
-            ## Nexus Browser ${{ github.ref_name }}
+            ## 🌌 Nexus Browser ${{ github.ref_name }}
             
-            Download `nexus-windows-x64.zip`, giải nén và chạy `nexus.exe`.
+            Download the appropriate version for your operating system:
+            - **Windows**: `nexus-windows-x64.zip`
+            - **Linux**: `nexus-linux-x64.zip`
+            - **macOS**: `nexus-macos-x64.zip`
             
-            **Lưu ý:** Để sử dụng tính năng 1-click Tor/WARP, vui lòng tải về Tor Browser và Cloudflare WARP.
+            **Note:** For Tor/WARP, ensure their respective clients are running locally.
           draft: false
           prerelease: false
         env:
