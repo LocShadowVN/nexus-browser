@@ -863,7 +863,7 @@ fn html() -> String {
 body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
 
-#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent;z-index:102}
+#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent;z-index:10}
 .tab{display:flex;align-items:center;max-width:220px;min-width:120px;height:32px;margin:0 2px;padding:0 12px;border-radius:8px 8px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;overflow:hidden;transition:background 0.2s}
 .tab:hover{background:rgba(0,0,0,0.05)}
 .tab.active{background:var(--panel);color:var(--t1)}
@@ -874,7 +874,7 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #new-tab-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
 #new-tab-btn:hover{background:rgba(0,0,0,0.05)}
 
-#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:102}
+#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10}
 .nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
 .nav-btn:hover{background:var(--input)}
 #url-bar{flex:1;height:36px;background:var(--input);border:1px solid transparent;border-radius:18px;padding:0 16px;font-size:14px;color:var(--t1);outline:none;transition:box-shadow 0.2s}
@@ -889,10 +889,11 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #workspace{flex:1;background:#fff;overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
-#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:101;overflow-y:auto;transition:right 0.3s}
+/* Sửa lỗi z-index: Sidebar phải cao hơn toolbar và tabs-bar */
+#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:1000;overflow-y:auto;transition:right 0.3s}
 #sidebar.open{right:0}
 .sidebar-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
-.sidebar-close{font-size:24px;cursor:pointer;color:var(--t2);line-height:1}
+.sidebar-close{font-size:24px;cursor:pointer;color:var(--t2);line-height:1;background:none;border:none}
 .sidebar-section{padding:12px 20px}
 .section-title{font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;font-weight:600}
 .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px}
@@ -903,7 +904,7 @@ iframe{width:100%;height:100%;border:none}
 input:checked+.slider{background:var(--acc)}
 input:checked+.slider:before{transform:translateX(16px)}
 
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);z-index:1000;display:none;padding:24px}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);z-index:1001;display:none;padding:24px}
 .modal.show{display:block}
 .modal-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--t1)}
 .modal-input{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);border-radius:4px;color:var(--t1);outline:none;font-size:14px}
@@ -913,11 +914,11 @@ input:checked+.slider:before{transform:translateX(16px)}
 .modal-btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
 .modal-btn.primary:hover{background:#1557b0}
 
-#dev-console{position:fixed;bottom:0;right:0;width:400px;height:200px;background:rgba(0,0,0,0.8);color:#0f0;border-radius:8px 0 0 0;padding:10px;font-size:12px;z-index:99;display:none;overflow-y:auto}
+#dev-console{position:fixed;bottom:0;right:0;width:400px;height:200px;background:rgba(0,0,0,0.8);color:#0f0;border-radius:8px 0 0 0;padding:10px;font-size:12px;z-index:999;display:none;overflow-y:auto}
 #dev-console.show{display:block}
 .log-entry{margin-bottom:4px;word-break:break-all}
 
-#pass-popup{position:fixed;bottom:20px;right:20px;width:320px;background:var(--panel);border:1px solid var(--brd);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:2000;padding:16px;display:none}
+#pass-popup{position:fixed;bottom:20px;right:20px;width:320px;background:var(--panel);border:1px solid var(--brd);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:1002;padding:16px;display:none}
 .popup-header{display:flex;justify-content:space-between;margin-bottom:12px}
 .popup-title{font-weight:600;font-size:14px}
 .popup-close{cursor:pointer;color:var(--t3);font-size:18px}
@@ -926,6 +927,10 @@ input:checked+.slider:before{transform:translateX(16px)}
 .popup-actions{display:flex;gap:8px}
 .popup-btn{flex:1;padding:8px;border:1px solid var(--brd);background:#fff;border-radius:4px;cursor:pointer;font-size:13px}
 .popup-btn.primary{background:var(--acc);color:#fff;border:none}
+
+/* Lịch sử */
+.history-item{display:block;width:100%;text-align:left;padding:8px;border-bottom:1px solid var(--brd);cursor:pointer;font-size:13px;color:var(--t1)}
+.history-item:hover{background:var(--input)}
 </style></head><body>
 <div id="app">
   <div id="tabs-bar"></div>
@@ -935,19 +940,20 @@ input:checked+.slider:before{transform:translateX(16px)}
     <button class="nav-btn" onclick="sr('ref')">⟳</button>
     <input type="text" id="url-bar" placeholder="Tìm kiếm Google hoặc nhập URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
     <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" title="Lưu trang">★</button>
+    <button class="tool-btn" onclick="toggleModal('history-modal')" title="Lịch sử">🕒</button>
     <button class="tool-btn" onclick="toggleModal('vault')" title="Kho mật khẩu">🔑</button>
     <button class="tool-btn" onclick="toggleModal('ai-modal')" title="Trợ lý AI">🤖</button>
     <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" title="Console">💻</button>
     <button class="tool-btn" onclick="toggleSidebar()" title="Menu">≡</button>
   </div>
-  <div id="bookmarks-bar"></div>
+  <div id="bookmarks-bar"><div style="color:var(--t3);font-size:13px;padding:4px 10px;">Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.</div></div>
 
   <div id="workspace"></div>
   <div id="dev-console"></div>
   <div id="sidebar">
     <div class="sidebar-header">
       <span>Cài đặt Nexus</span>
-      <span class="sidebar-close" onclick="toggleSidebar()">&times;</span>
+      <button class="sidebar-close" onclick="toggleSidebar()">&times;</button>
     </div>
     <div class="sidebar-section"><div class="section-title">Kết nối</div>
       <div class="row"><span>Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
@@ -970,6 +976,12 @@ input:checked+.slider:before{transform:translateX(16px)}
       <div class="row"><span>Edge</span><label class="switch"><input type="checkbox" onchange="ts('sync-edge',this.checked)"><span class="slider"></span></label></div>
       <button class="modal-btn primary" onclick="sr('sync-now')">Đồng bộ ngay</button>
     </div>
+  </div>
+
+  <div id="history-modal" class="modal">
+    <div class="modal-title">Lịch sử duyệt web</div>
+    <div id="history-list" style="max-height:300px;overflow-y:auto;margin-bottom:20px;"></div>
+    <button class="modal-btn" onclick="toggleModal('history-modal')">Đóng</button>
   </div>
 
   <div id="vault" class="modal">
@@ -1024,7 +1036,21 @@ function closeTab(i,e) { e.stopPropagation(); if(tabs.length>1) sr('close-tab',i
 function switchTab(i) { sr('switch-tab',i); }
 
 function renderBookmarks(bms) {
-  document.getElementById('bookmarks-bar').innerHTML = bms.map(b => `<div class="bm-item" onclick="sr('nav','${b.url}')">${b.title}</div>`).join('');
+  const bar = document.getElementById('bookmarks-bar');
+  if(!bms || bms.length === 0) {
+    bar.innerHTML = '<div style="color:var(--t3);font-size:13px;padding:4px 10px;">Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.</div>';
+    return;
+  }
+  bar.innerHTML = bms.map(b => `<div class="bm-item" onclick="sr('nav','${b.url}')">${b.title}</div>`).join('');
+}
+
+function renderHistory(hist) {
+  const list = document.getElementById('history-list');
+  if(!hist || hist.length === 0) {
+    list.innerHTML = '<p style="color:var(--t2)">Chưa có lịch sử.</p>';
+    return;
+  }
+  list.innerHTML = hist.reverse().map(h => `<div class="history-item" onclick="sr('nav','${h.url}');toggleModal('history-modal')">${h.title} <span style="color:var(--t3);font-size:11px;">(${new Date(h.time*1000).toLocaleString()})</span></div>`).join('');
 }
 
 function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
@@ -1067,6 +1093,7 @@ window.addEventListener('message',function(event) {
     const data = JSON.parse(event.data);
     if (data.a === 'update-tabs') updateTabs(data.p);
     else if (data.a === 'update-bookmarks') renderBookmarks(data.p);
+    else if (data.a === 'update-history') renderHistory(data.p);
     else if (data.a === 'password-detected') showPassPopup(data.p);
     else if (data.a === 'nav-internal') sr('nav-internal', data.p);
     else if (data.a === 'nav-post') sr('nav-post', data.p);
@@ -1090,8 +1117,9 @@ renderTabs();
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
+        // Sửa lỗi web vỡ: Thêm lại allow-same-origin để trang web load CSS/JS/Hình ảnh
         let _ = px.send_event(Ev::Js(format!(
-            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-forms allow-presentation';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
+            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
             h
         )));
         let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", u)));
@@ -1226,6 +1254,11 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
             g.history.push(state::HistoryEntry { url: clean_url.clone(), title, time });
             state::save_history(&g.history);
             
+            let hist_data = g.history.clone();
+            if let Ok(hd) = serde_json::to_string(&hist_data) {
+                let _ = px.send_event(Ev::Js(format!(r#"if(window.renderHistory)window.renderHistory({})"#, hd)));
+            }
+
             update_tabs(&g, px);
         }
     } else {
@@ -1315,6 +1348,11 @@ fn main() {
         let _ = px.send_event(Ev::Js(format!(r#"if(window.renderBookmarks)window.renderBookmarks({})"#, b)));
     }
 
+    let hist_init = st.clone().blocking_read().history.clone();
+    if let Ok(h) = serde_json::to_string(&hist_init) {
+        let _ = px.send_event(Ev::Js(format!(r#"if(window.renderHistory)window.renderHistory({})"#, h)));
+    }
+
     let wb = WebViewBuilder::new()
         .with_devtools(false)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
@@ -1349,7 +1387,10 @@ fn main() {
                         ipx.send_event(Ev::Js(format!("lg('{}');", safe_msg))).ok();
                     }
                     "bookmark" => if let Some(url) = d.as_str() {
-                        if url.is_empty() || url == "nexus://home" { return; }
+                        if url.is_empty() || url == "nexus://home" { 
+                            ipx.send_event(Ev::Js("lg('Không thể lưu trang này');".into())).ok();
+                            return; 
+                        }
                         let mut g = ist.write().await;
                         let title = g.active_tab().name.clone();
                         g.bookmarks.push(state::Bookmark { title, url: url.to_string() });
