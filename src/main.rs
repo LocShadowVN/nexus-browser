@@ -1,3 +1,5 @@
+// Thêm dòng này để ẩn cửa sổ Terminal đen trên Windows
+#![windows_subsystem = "windows"]
 #![allow(dead_code, unused_imports, unused_variables, unreachable_code)]
 
 use std::{
@@ -84,7 +86,6 @@ mod state {
     #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
     pub struct Bookmark { pub title: String, pub url: String }
 
-    // TÍNH NĂNG MỚI: Lịch sử duyệt web
     #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
     pub struct HistoryEntry { pub url: String, pub title: String, pub time: u64 }
     
@@ -188,8 +189,8 @@ mod state {
         pub blocked: u64,
         pub global_cfg: GlobalConfig,
         pub sync: SyncState,
-        pub bookmarks: Vec<Bookmark>, // Thanh đánh dấu
-        pub history: Vec<HistoryEntry>, // Lịch sử toàn cục
+        pub bookmarks: Vec<Bookmark>,
+        pub history: Vec<HistoryEntry>,
     }
     
     impl State {
@@ -271,7 +272,6 @@ mod state {
         }
     }
 
-    // TÍNH NĂNG MỚI: Lưu & Tải Lịch sử, Bookmark, và Khôi phục Tab
     pub fn save_session(tabs: &[TabState]) {
         let urls: Vec<String> = tabs.iter().filter(|t| t.url != "nexus://home").map(|t| t.url.clone()).collect();
         let _ = std::fs::write("session.json", serde_json::to_string(&urls).unwrap_or_default());
@@ -863,7 +863,7 @@ fn html() -> String {
 body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
 
-#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent}
+#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent;z-index:102}
 .tab{display:flex;align-items:center;max-width:220px;min-width:120px;height:32px;margin:0 2px;padding:0 12px;border-radius:8px 8px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;overflow:hidden;transition:background 0.2s}
 .tab:hover{background:rgba(0,0,0,0.05)}
 .tab.active{background:var(--panel);color:var(--t1)}
@@ -874,8 +874,7 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #new-tab-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
 #new-tab-btn:hover{background:rgba(0,0,0,0.05)}
 
-/* TOOLBAR & BOOKMARKS BAR */
-#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd)}
+#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:102}
 .nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
 .nav-btn:hover{background:var(--input)}
 #url-bar{flex:1;height:36px;background:var(--input);border:1px solid transparent;border-radius:18px;padding:0 16px;font-size:14px;color:var(--t1);outline:none;transition:box-shadow 0.2s}
@@ -890,9 +889,10 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #workspace{flex:1;background:#fff;overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
-#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:100;overflow-y:auto;transition:right 0.3s}
+#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:101;overflow-y:auto;transition:right 0.3s}
 #sidebar.open{right:0}
-.sidebar-header{padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
+.sidebar-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
+.sidebar-close{font-size:24px;cursor:pointer;color:var(--t2);line-height:1}
 .sidebar-section{padding:12px 20px}
 .section-title{font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;font-weight:600}
 .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px}
@@ -945,7 +945,10 @@ input:checked+.slider:before{transform:translateX(16px)}
   <div id="workspace"></div>
   <div id="dev-console"></div>
   <div id="sidebar">
-    <div class="sidebar-header">Cài đặt Nexus</div>
+    <div class="sidebar-header">
+      <span>Cài đặt Nexus</span>
+      <span class="sidebar-close" onclick="toggleSidebar()">&times;</span>
+    </div>
     <div class="sidebar-section"><div class="section-title">Kết nối</div>
       <div class="row"><span>Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
       <div class="row"><span>Mạng Tor</span><label class="switch"><input type="checkbox" id="tor-toggle" onchange="ts('tor',this.checked)"><span class="slider"></span></label></div>
@@ -1218,7 +1221,6 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
                 t.name = parsed.host_str().unwrap_or("New Tab").to_string();
             }
 
-            // TÍNH NĂNG MỚI: Lưu Lịch sử toàn cục
             let title = t.name.clone();
             let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
             g.history.push(state::HistoryEntry { url: clean_url.clone(), title, time });
@@ -1245,7 +1247,6 @@ fn update_tabs(state: &state::State, px: &tao::event_loop::EventLoopProxy<Ev>) {
         let _ = px.send_event(Ev::Js(format!(r#"if(window.updateTabs)window.updateTabs({{"tabs":{},"activeTab":{}}})"#, t, state.active_tab)));
     }
 
-    // TÍNH NĂNG MỚI: Tự động lưu phiên (Session) mỗi khi tab thay đổi
     state::save_session(&state.tabs);
 }
 
@@ -1265,7 +1266,6 @@ fn main() {
     let mut initial = state::State::new();
     initial.tabs[0].vault = Some(vault::load());
     
-    // TÍNH NĂNG MỚI: Khôi phục Tab và Tải Bookmark
     let saved_tabs = state::load_session();
     if !saved_tabs.is_empty() {
         initial.tabs.clear();
@@ -1310,7 +1310,6 @@ fn main() {
         }
     });
     
-    // Cập nhật Bookmarks lên UI lúc mới khởi động
     let bm_init = st.clone().blocking_read().bookmarks.clone();
     if let Ok(b) = serde_json::to_string(&bm_init) {
         let _ = px.send_event(Ev::Js(format!(r#"if(window.renderBookmarks)window.renderBookmarks({})"#, b)));
