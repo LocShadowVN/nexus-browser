@@ -1181,7 +1181,7 @@ renderTabs();
 }
 
 // ======================
-// RENDER PAGE (Sửa lỗi trắng trang bằng cách revert lại srcdoc)
+// RENDER PAGE
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
@@ -1556,7 +1556,7 @@ fn main() {
                             let domain = if let Ok(parsed) = Url::parse(url) { parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string()) } else { url.split('/').next().unwrap_or(url).to_string() };
                             let mut g = ist.write().await;
                             if let Some(vault) = &mut g.active_tab_mut().vault {
-                                if let Some(entry) = vault.iter_mut().find(|e => e.domain == domain && e.user == user) {
+                                if let Some(entry) = vault.iter_mut().find(|e| e.domain == domain && e.user == user) {
                                     entry.pass = pass.into();
                                     entry.last_used = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
                                 } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
