@@ -1,35 +1,3 @@
-<CoT>
-Đã kích hoạt chuỗi CoT (Chain of Thought) để rà soát và xử lý triệt để.
-
-**1. Phân tích các lỗi đã mắc phải trước đó:**
-- *Lỗi 1: Cửa sổ Terminal đen.* Nguyên nhân do thiếu attribute `#![windows_subsystem = "windows"]`. Đã thêm vào.
-- *Lỗi 2: Trình duyệt bị đơ (Freeze) khi search.* Nguyên nhân do hàm `evaluate_script` truyền chuỗi HTML khổng lồ qua `srcdoc` bị giới hạn độ dài hoặc vỡ cú pháp JS. Hơn nữa, cơ chế `js_queue` gộp lệnh đã gây deadlock Event Loop.
-- *Lỗi 3: Thanh Sidebar không đóng được.* Nguyên nhân do `z-index` của Toolbar đè lên nút đóng của Sidebar.
-- *Lỗi 4: Lỗi Tracker Blocker gây treo web.* Nguyên nhân do minify JS sai cú pháp, gọi hàm `.some()` trên một chuỗi thay vì mảng, gây ra exception liên tục.
-- *Lỗi 5: Mất tính năng History/Bookmark/Incognito/Lang.* Do trong quá trình sửa lỗi, code UI cũ bị ghi đè.
-
-**2. Chiến lược Fix triệt để (The Ultimate Fix):**
-- **Fix Lỗi 2 (Render HTML):** Thay vì truyền HTML qua JS, Rust sẽ ghi HTML ra file tạm `nexus_temp.html`. Sau đó, JS chỉ việc gán `iframe.src = 'file:///...'`. Cách này vượt qua mọi giới hạn độ dài chuỗi, Google/YouTube load mượt mà 100%.
-- **Fix Lỗi 2 (Deadlock):** Bỏ hoàn toàn hàng đợi `js_queue`. Gọi `wv.evaluate_script(&j)` ngay lập tức khi nhận Event.
-- **Fix Lỗi 3 (CSS):** Chỉnh `z-index` của Sidebar lên 1000, Modal 1001, Toolbar 10. Thêm nút "X" rõ ràng bên trong Sidebar.
-- **Fix Lỗi 4 (Tracker):** Viết lại JS chặn Tracker an toàn, kiểm tra kỹ kiểu dữ liệu trước khi xử lý.
-- **Giữ Lại Tính Năng:** Tích hợp đầy đủ UI mới: Đa ngôn ngữ (EN/VI), Incognito Tab, History, Bookmark.
-
-**3. Rà soát Code Rust:**
-- Vòng lặp sự kiện (Event Loop) chỉ dùng `ControlFlow::Wait`, an toàn không deadlock.
-- Các lệnh IPC xử lý chuẩn xác, bọc `if let Some` an toàn.
-- File tạm được lưu bằng `std::env::temp_dir()` để hoạt động đa nền tảng (Windows/macOS/Linux).
-
-Chuẩn bị xuất mã nguồn cuối cùng, sạch 100%.
-</CoT>
-
-Tôi đã kích hoạt chuỗi CoT và rà soát toàn bộ logic. Lần này tôi đã **khắc phục triệt để** nguyên nhân gốc rễ khiến trình duyệt bị đơ (gây ra do giới hạn độ dài chuỗi khi nhét HTML khổng lồ của Google qua JavaScript). Thay vào đó, Rust sẽ ghi HTML ra file tạm và bảo iframe tải file đó, đảm bảo render mượt mà 100%. 
-
-Đồng thời, tôi đã khôi phục toàn bộ tính năng (Incognito, Đa ngôn ngữ, History, Bookmark) và sửa lỗi nút Sidebar không đóng được.
-
-Bạn copy toàn bộ code dưới đây thay thế file `src/main.rs`. Đây là bản tối ưu và ổn định nhất:
-
-```rust
 // Ẩn cửa sổ Terminal đen trên Windows
 #![windows_subsystem = "windows"]
 #![allow(dead_code, unused_imports, unused_variables, unreachable_code)]
