@@ -1181,10 +1181,9 @@ renderTabs();
 }
 
 // ======================
-// RENDER PAGE (FIX LỖI KHÔNG RENDER TRANG WEB)
+// RENDER PAGE
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
-    // Lưu HTML ra file tạm để tránh lỗi giới hạn độ dài chuỗi của evaluate_script
     let temp_path = std::env::temp_dir().join("nexus_page.html");
     if std::fs::write(&temp_path, html_out).is_err() {
         let _ = px.send_event(Ev::Js("lg('Failed to render page: Cannot write temp file');".into()));
@@ -1194,7 +1193,6 @@ fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<E
     let path_str = temp_path.to_str().unwrap_or("nexus_page.html").replace('\\', "/");
     let file_url = format!("file:///{}", path_str);
     
-    // Dùng file:// để iframe tải HTML cực lớn một cách an toàn
     let _ = px.send_event(Ev::Js(format!(
         "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.src='{}';w.appendChild(f);",
         file_url
@@ -1644,7 +1642,6 @@ fn main() {
                 }});
             }
             Event::UserEvent(Ev::Js(j)) => {
-                // Chạy JS ngay lập tức, không batching để tránh deadlock/lỗi đơ máy
                 let _ = wv.evaluate_script(&j);
             }
             Event::UserEvent(Ev::NewTab(_)) | Event::UserEvent(Ev::CloseTab(_)) => {
@@ -1658,4 +1655,3 @@ fn main() {
         }
     });
 }
-
