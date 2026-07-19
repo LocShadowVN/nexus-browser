@@ -1633,11 +1633,21 @@ fn main() {
                     load_url(first_url, st, &px, false).await; 
                 }});
             }
-            Event::UserEvent(Ev::Js(j)) => {
-                js_queue.push(j);
-                if js_queue.len() >= 5 || last_flush.elapsed() > Duration::from_millis(16) {
+            Event::NewEvents(StartCause::ResumeTimeReached) => {
+                if !js_queue.is_empty() {
                     let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(";"));
                     last_flush = Instant::now();
+                }
+                *cf = ControlFlow::Wait;
+            }
+            Event::UserEvent(Ev::Js(j)) => {
+                js_queue.push(j);
+                if js_queue.len() >= 5 {
+                    let _ = wv.evaluate_script(&std::mem::take(&mut js_queue).join(";"));
+                    last_flush = Instant::now();
+                    *cf = ControlFlow::Wait;
+                } else {
+                    *cf = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(16));
                 }
             }
             Event::UserEvent(Ev::NewTab(_)) | Event::UserEvent(Ev::CloseTab(_)) => {
