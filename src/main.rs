@@ -1378,13 +1378,16 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
     if let Ok(r) = req
         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
         .header("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
+        .header("Accept-Encoding", "identity")
         .header("DNT", "1")
         .send().await {
+        let status = r.status();
         let content_type = r.headers().get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok()).unwrap_or("text/html").to_lowercase();
 
         if content_type.contains("text/html") || content_type.contains("text/plain") {
-            if let Ok(h) = r.text().await {
+            match r.text().await {
+                Ok(h) => {
                 let safe_url = clean_url.replace('&', "&amp;").replace('"', "&quot;");
                 let shield = injection::get_security_payload(&cfg);
                 let inj = format!(r#"<base href="{}">{}"#, safe_url, shield);
@@ -1410,6 +1413,12 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
                     else { html_out.push_str(&ext_inj); }
                 }
                 render_page(&html_out, &clean_url, px);
+                }
+                Err(_) => {
+                    let msg = format!("This page sent a response NEXUS couldn't decode as text (HTTP {}). It may require a browser feature NEXUS doesn't yet support.", status.as_u16());
+                    let html = format!(r#"<html><body style="font-family:sans-serif;padding:60px;text-align:center;color:#5f6368"><h2>Couldn't display this page</h2><p>{}</p></body></html>"#, msg);
+                    render_page(&html, &clean_url, px);
+                }
             }
         } else if content_type.contains("image/") {
             let html = format!(r#"<html><body style="margin:0;background:#0e0e0e;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="{}" style="max-width:100%;max-height:100%;"></body></html>"#, clean_url);
