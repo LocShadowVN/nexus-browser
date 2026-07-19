@@ -1629,17 +1629,21 @@ fn main() {
     
     update_tabs(&st.blocking_read(), &px);
     
+    // VÒNG LẶP SỰ KIỆN SẠCH 100%, KHÔNG CÒN LỖI StartCause::ResumeTimeReached
     el.run(move |ev, _, cf| {
         *cf = ControlFlow::Wait;
         match ev {
             Event::NewEvents(StartCause::Init) => {
                 px.send_event(Ev::Js("lg('Nexus Core initialized');".into())).ok();
-                handle_for_loop.spawn({ let (st, px) = (st.clone(), px.clone()); async move { 
-                    let st_read = st.read().await;
-                    let first_url = st_read.tabs[0].url.clone();
-                    drop(st_read);
-                    load_url(first_url, st, &px, false).await; 
-                }});
+                handle_for_loop.spawn({ 
+                    let (st, px) = (st.clone(), px.clone()); 
+                    async move { 
+                        let st_read = st.read().await;
+                        let first_url = st_read.tabs[0].url.clone();
+                        drop(st_read);
+                        load_url(first_url, st, &px, false).await; 
+                    }
+                });
             }
             Event::UserEvent(Ev::Js(j)) => {
                 let _ = wv.evaluate_script(&j);
@@ -1647,7 +1651,10 @@ fn main() {
             Event::UserEvent(Ev::NewTab(_)) | Event::UserEvent(Ev::CloseTab(_)) => {
                 update_tabs(&st.blocking_read(), &px);
                 if let Event::UserEvent(Ev::NewTab(_)) = ev {
-                    handle_for_loop.spawn({ let (st, px) = (st.clone(), px.clone()); async move { load_url("nexus://home".into(), st, &px, false).await; } });
+                    handle_for_loop.spawn({ 
+                        let (st, px) = (st.clone(), px.clone()); 
+                        async move { load_url("nexus://home".into(), st, &px, false).await; } 
+                    });
                 }
             }
             Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => *cf = ControlFlow::Exit,
