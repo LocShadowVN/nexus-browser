@@ -1181,23 +1181,16 @@ renderTabs();
 }
 
 // ======================
-// RENDER PAGE
+// RENDER PAGE (Sửa lỗi trắng trang bằng cách revert lại srcdoc)
 // ======================
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
-    let temp_path = std::env::temp_dir().join("nexus_page.html");
-    if std::fs::write(&temp_path, html_out).is_err() {
-        let _ = px.send_event(Ev::Js("lg('Failed to render page: Cannot write temp file');".into()));
-        return;
+    if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
+        let _ = px.send_event(Ev::Js(format!(
+            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
+            h
+        )));
+        let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", u)));
     }
-    
-    let path_str = temp_path.to_str().unwrap_or("nexus_page.html").replace('\\', "/");
-    let file_url = format!("file:///{}", path_str);
-    
-    let _ = px.send_event(Ev::Js(format!(
-        "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.src='{}';w.appendChild(f);",
-        file_url
-    )));
-    let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", url)));
 }
 
 // ======================
@@ -1563,7 +1556,7 @@ fn main() {
                             let domain = if let Ok(parsed) = Url::parse(url) { parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string()) } else { url.split('/').next().unwrap_or(url).to_string() };
                             let mut g = ist.write().await;
                             if let Some(vault) = &mut g.active_tab_mut().vault {
-                                if let Some(entry) = vault.iter_mut().find(|e| e.domain == domain && e.user == user) {
+                                if let Some(entry) = vault.iter_mut().find(|e => e.domain == domain && e.user == user) {
                                     entry.pass = pass.into();
                                     entry.last_used = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
                                 } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
@@ -1629,7 +1622,6 @@ fn main() {
     
     update_tabs(&st.blocking_read(), &px);
     
-    // VÒNG LẶP SỰ KIỆN SẠCH 100%, KHÔNG CÒN LỖI StartCause::ResumeTimeReached
     el.run(move |ev, _, cf| {
         *cf = ControlFlow::Wait;
         match ev {
