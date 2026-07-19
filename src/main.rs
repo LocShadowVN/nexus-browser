@@ -908,30 +908,58 @@ fn html() -> String {
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-:root{--bg:#dee1e6;--panel:#ffffff;--input:#f1f3f4;--brd:#dadce0;--acc:#1a73e8;--acc-hover:#1557b0;--on-acc:#ffffff;--t1:#202124;--t2:#5f6368;--t3:#80868b}
-:root[data-theme="dark"]{--bg:#17181a;--panel:#222327;--input:#2c2d32;--brd:#3a3b40;--acc:#8ab4f8;--acc-hover:#aecbfa;--on-acc:#062e6f;--t1:#e8eaed;--t2:#b0b3b8;--t3:#8a8d93}
+:root{--bg:#dee1e6;--panel:#ffffff;--input:#f1f3f4;--brd:#dadce0;--acc:#1a73e8;--acc-hover:#1557b0;--on-acc:#ffffff;--t1:#202124;--t2:#5f6368;--t3:#80868b;--star:#e8a33d}
+:root[data-theme="dark"]{--bg:#17181a;--panel:#222327;--input:#2c2d32;--brd:#3a3b40;--acc:#8ab4f8;--acc-hover:#aecbfa;--on-acc:#062e6f;--t1:#e8eaed;--t2:#b0b3b8;--t3:#8a8d93;--star:#f0b64d}
 html,body{transition:background-color .2s ease,color .2s ease}
 body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
 
-#tabs-bar{display:flex;align-items:center;height:40px;padding:0 8px;background:var(--bg);border-bottom:1px solid transparent;z-index:10}
-.tab{display:flex;align-items:center;max-width:220px;min-width:120px;height:32px;margin:0 2px;padding:0 12px;border-radius:8px 8px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;overflow:hidden;transition:background 0.2s}
-.tab:hover{background:rgba(0,0,0,0.05)}
-.tab.active{background:var(--panel);color:var(--t1)}
-.tab.frozen{opacity:0.6;font-style:italic}
-.tab-title{flex:1;overflow:hidden;text-overflow:ellipsis;margin-right:8px;font-size:13px}
-.tab-close{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:var(--t3);font-size:16px}
-.tab-close:hover{background:rgba(0,0,0,0.1);color:var(--t1)}
-#new-tab-btn,#new-incognito-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;color:var(--t2);cursor:pointer;font-size:18px;margin-left:4px}
-#new-tab-btn:hover,#new-incognito-btn:hover{background:rgba(0,0,0,0.05)}
+#tabs-bar{display:flex;align-items:center;height:42px;padding:6px 8px 0;background:var(--bg);gap:2px;z-index:10}
+.tab{display:flex;align-items:center;max-width:220px;min-width:140px;height:34px;padding:0 8px 0 14px;
+  border-radius:10px 10px 0 0;background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap;
+  overflow:hidden;transition:background .15s ease;position:relative}
+.tab:hover{background:color-mix(in srgb, var(--t1) 6%, transparent)}
+.tab.active{background:var(--panel);color:var(--t1);box-shadow:0 -1px 0 var(--panel)}
+.tab.frozen .tab-title{opacity:.55}
+.tab-title{flex:1;overflow:hidden;text-overflow:ellipsis;margin-right:6px;font-size:12.5px;font-weight:500}
+.tab-close{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px;height:22px;
+  border-radius:50%;color:var(--t3);opacity:0;transition:opacity .15s,background .15s}
+.tab:hover .tab-close,.tab.active .tab-close{opacity:1}
+.tab-close:hover{background:color-mix(in srgb, var(--t1) 10%, transparent);color:var(--t1)}
+.tab-close svg{width:13px;height:13px}
+#new-tab-btn,#new-incognito-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;color:var(--t2);cursor:pointer;flex-shrink:0;margin-left:2px;transition:background .15s}
+#new-tab-btn:hover,#new-incognito-btn:hover{background:color-mix(in srgb, var(--t1) 8%, transparent);color:var(--t1)}
+#new-tab-btn svg,#new-incognito-btn svg{width:16px;height:16px}
 
-#toolbar{display:flex;align-items:center;gap:4px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10}
-.nav-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%}
-.nav-btn:hover{background:var(--input)}
-#url-bar{flex:1;height:36px;background:var(--input);border:1px solid transparent;border-radius:18px;padding:0 16px;font-size:14px;color:var(--t1);outline:none;transition:box-shadow 0.2s}
-#url-bar:focus{background:var(--panel);box-shadow:0 1px 6px rgba(32,33,36,0.28);border-color:var(--brd)}
-.tool-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;font-size:16px}
-.tool-btn:hover{background:var(--input)}
+#toolbar{display:flex;align-items:center;gap:2px;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10}
+.nav-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;
+  background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;flex-shrink:0;transition:background .15s,color .15s}
+.nav-btn:hover{background:var(--input);color:var(--t1)}
+.nav-btn:disabled{opacity:.35;cursor:default}
+.nav-btn:disabled:hover{background:transparent}
+.nav-btn svg{width:18px;height:18px}
+.toolbar-gap{width:8px;flex-shrink:0}
+
+.url-wrap{flex:1;display:flex;align-items:center;height:36px;background:var(--input);border:1px solid transparent;
+  border-radius:18px;padding:0 6px 0 12px;transition:box-shadow .15s,border-color .15s,background .15s;min-width:0}
+.url-wrap:focus-within{background:var(--panel);border-color:var(--brd);box-shadow:0 1px 8px rgba(0,0,0,.12)}
+.url-icon{color:var(--t3);flex-shrink:0;display:flex}
+.url-icon svg{width:15px;height:15px}
+#url-bar{flex:1;height:100%;background:transparent;border:none;padding:0 10px;font-size:13.5px;color:var(--t1);
+  outline:none;min-width:0}
+.url-star{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;
+  background:transparent;color:var(--t3);cursor:pointer;border-radius:50%;flex-shrink:0;transition:background .15s,color .15s}
+.url-star:hover{background:var(--brd);color:var(--t1)}
+.url-star.saved{color:var(--star)}
+.url-star svg{width:15px;height:15px}
+
+.tool-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;
+  background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;flex-shrink:0;margin-left:2px;
+  transition:background .15s,color .15s}
+.tool-btn:hover{background:var(--input);color:var(--t1)}
+.tool-btn svg{width:18px;height:18px}
+.tool-btn.active-toggle{color:var(--acc);background:color-mix(in srgb, var(--acc) 14%, transparent)}
 
 #bookmarks-bar{display:flex;align-items:center;gap:4px;padding:4px 12px;background:var(--panel);border-bottom:1px solid var(--brd);min-height:32px}
 .bm-item{padding:4px 10px;border-radius:4px;font-size:13px;color:var(--t2);cursor:pointer;white-space:nowrap}
@@ -984,21 +1012,46 @@ input:checked+.slider:before{transform:translateX(16px)}
 <div id="app">
   <div id="tabs-bar"></div>
   <div id="toolbar">
-    <button class="nav-btn" onclick="sr('back')" title="Back (Alt+←)">←</button>
-    <button class="nav-btn" onclick="sr('fwd')" title="Forward (Alt+→)">→</button>
-    <button class="nav-btn" onclick="sr('ref')" title="Reload (Ctrl+R)">⟳</button>
-    <input type="text" id="url-bar" data-i18n-placeholder="url_ph" placeholder="Search or type URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
-    <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" data-i18n-title="bookmark" title="Bookmark">★</button>
-    <button class="tool-btn" onclick="toggleModal('history-modal')" data-i18n-title="history" title="History (Ctrl+H)">🕒</button>
-    <button class="tool-btn" onclick="toggleModal('vault')" data-i18n-title="vault" title="Vault">🔑</button>
-    <button class="tool-btn" onclick="toggleModal('ai-modal')" data-i18n-title="ai" title="AI Assistant">🤖</button>
-    <button class="tool-btn" onclick="openExtensions()" data-i18n-title="extensions" title="Extensions">🧩</button>
-    <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" data-i18n-title="console" title="Console">💻</button>
-    <button class="tool-btn" onclick="toggleTheme()" id="theme-btn" data-i18n-title="theme" title="Toggle theme (Ctrl+Shift+L)">🌙</button>
-    <button class="tool-btn" onclick="toggleLang()" id="lang-btn" title="Language">🇻🇳</button>
-    <button class="tool-btn" onclick="toggleSidebar()" data-i18n-title="menu" title="Menu">≡</button>
+    <button class="nav-btn" id="btn-back" onclick="sr('back')" title="Back (Alt+←)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <button class="nav-btn" id="btn-fwd" onclick="sr('fwd')" title="Forward (Alt+→)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </button>
+    <button class="nav-btn" onclick="sr('ref')" title="Reload (Ctrl+R)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+    </button>
+    <div class="toolbar-gap"></div>
+    <div class="url-wrap">
+      <span class="url-icon" title="Shields active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3.5v5.5c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V5.5L12 2z"/></svg>
+      </span>
+      <input type="text" id="url-bar" data-i18n-placeholder="url_ph" placeholder="Search or type URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+      <button class="url-star" id="star-btn" onclick="sr('bookmark', v('url-bar'))" data-i18n-title="bookmark" title="Bookmark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z"/></svg>
+      </button>
+    </div>
+    <button class="tool-btn" onclick="toggleModal('history-modal')" data-i18n-title="history" title="History (Ctrl+H)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+    </button>
+    <button class="tool-btn" onclick="toggleModal('vault')" data-i18n-title="vault" title="Vault">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </button>
+    <button class="tool-btn" onclick="toggleModal('ai-modal')" data-i18n-title="ai" title="AI Assistant">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.3L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.7L12 3z"/><path d="M19 3.5l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z"/></svg>
+    </button>
+    <button class="tool-btn" onclick="openExtensions()" data-i18n-title="extensions" title="Extensions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    </button>
+    <button class="tool-btn" onclick="toggleTheme()" id="theme-btn" data-i18n-title="theme" title="Toggle theme (Ctrl+Shift+L)">
+      <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>
+      <svg id="iconMoon" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z"/></svg>
+    </button>
+    <button class="tool-btn" onclick="toggleSidebar()" data-i18n-title="menu" title="Menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
   </div>
-  <div id="bookmarks-bar"><div class="bm-empty" data-i18n="empty_bm" style="color:var(--t3);font-size:13px;padding:4px 10px;">No bookmarks. Click ★ to save.</div></div>
+  <div id="bookmarks-bar"><div class="bm-empty" data-i18n="empty_bm" style="color:var(--t3);font-size:13px;padding:4px 10px;">No bookmarks yet. Click the star to save this page.</div></div>
 
   <div id="workspace"></div>
   <div id="dev-console"></div>
@@ -1006,6 +1059,10 @@ input:checked+.slider:before{transform:translateX(16px)}
     <div class="sidebar-header">
       <span data-i18n="settings">Nexus Settings</span>
       <button class="sidebar-close" onclick="toggleSidebar()">&times;</button>
+    </div>
+    <div class="sidebar-section"><div class="section-title" data-i18n="general">GENERAL</div>
+      <div class="row"><span data-i18n="lang_row">Tiếng Việt</span><label class="switch"><input type="checkbox" id="lang-toggle" onchange="toggleLang()"><span class="slider"></span></label></div>
+      <div class="row"><span data-i18n="console">Developer Console</span><label class="switch"><input type="checkbox" id="console-toggle" onchange="document.getElementById('dev-console').classList.toggle('show', this.checked)"><span class="slider"></span></label></div>
     </div>
     <div class="sidebar-section"><div class="section-title" data-i18n="connection">CONNECTION</div>
       <div class="row"><span data-i18n="warp">Cloudflare WARP</span><label class="switch"><input type="checkbox" id="warp-toggle" onchange="ts('warp',this.checked)"><span class="slider"></span></label></div>
@@ -1085,8 +1142,8 @@ let lang = 'en';
 
 const i18n = {
   en: {
-    url_ph: "Search or type URL", bookmark: "Bookmark", history: "History (Ctrl+H)", vault: "Vault", ai: "AI Assistant", console: "Console", menu: "Menu", extensions: "Extensions", theme: "Toggle theme (Ctrl+Shift+L)",
-    empty_bm: "No bookmarks. Click ★ to save.",
+    url_ph: "Search or type URL", bookmark: "Bookmark", history: "History (Ctrl+H)", vault: "Vault", ai: "AI Assistant", console: "Developer Console", menu: "Menu", extensions: "Extensions", theme: "Toggle theme (Ctrl+Shift+L)", general: "GENERAL", lang_row: "Vietnamese",
+    empty_bm: "No bookmarks yet. Click the star to save this page.",
     settings: "Nexus Settings", connection: "CONNECTION", warp: "Cloudflare WARP", tor: "Tor Network",
     shields: "SHIELDS", ad: "Ad Blocker", trk: "Tracker Block", cookie: "Cookie Shield", sink: "Domain Sinkhole", anti_fp: "Anti-Fingerprint",
     passwords: "PASSWORDS", auto_save: "Auto Save", pass_suggest: "Password Suggest",
@@ -1100,8 +1157,8 @@ const i18n = {
     master_req: "Please enter Master Password in Vault before saving!", synced: "Synced: Chrome({}), Firefox({}), Edge({})"
   },
   vi: {
-    url_ph: "Tìm kiếm hoặc nhập URL", bookmark: "Lưu trang", history: "Lịch sử (Ctrl+H)", vault: "Kho mật khẩu", ai: "Trợ lý AI", console: "Console", menu: "Menu", extensions: "Tiện ích mở rộng", theme: "Đổi giao diện (Ctrl+Shift+L)",
-    empty_bm: "Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.",
+    url_ph: "Tìm kiếm hoặc nhập URL", bookmark: "Lưu trang", history: "Lịch sử (Ctrl+H)", vault: "Kho mật khẩu", ai: "Trợ lý AI", console: "Developer Console", menu: "Menu", extensions: "Tiện ích mở rộng", theme: "Đổi giao diện (Ctrl+Shift+L)", general: "CHUNG", lang_row: "Tiếng Việt",
+    empty_bm: "Chưa có dấu trang. Bấm biểu tượng ngôi sao để lưu trang này.",
     settings: "Cài đặt Nexus", connection: "KẾT NỐI", warp: "Cloudflare WARP", tor: "Mạng Tor",
     shields: "LÁ CHẮN", ad: "Chặn Quảng cáo", trk: "Chặn Tracker", cookie: "Bảo vệ Cookie", sink: "Chặn Domain", anti_fp: "Anti-Fingerprint",
     passwords: "MẬT KHẨU", auto_save: "Tự động lưu", pass_suggest: "Gợi ý mật khẩu",
@@ -1120,13 +1177,15 @@ function applyLang() {
   document.querySelectorAll('[data-i18n]').forEach(el => { const k = el.getAttribute('data-i18n'); if(i18n[lang][k]) el.textContent = i18n[lang][k]; });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { const k = el.getAttribute('data-i18n-placeholder'); if(i18n[lang][k]) el.placeholder = i18n[lang][k]; });
   document.querySelectorAll('[data-i18n-title]').forEach(el => { const k = el.getAttribute('data-i18n-title'); if(i18n[lang][k]) el.title = i18n[lang][k]; });
-  document.getElementById('lang-btn').textContent = lang === 'en' ? '🇻🇳' : '🇬🇧';
+  const langToggle = document.getElementById('lang-toggle');
+  if (langToggle) langToggle.checked = lang === 'vi';
 }
 function toggleLang() { lang = lang === 'en' ? 'vi' : 'en'; applyLang(); }
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('theme-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
+  document.getElementById('iconSun').style.display = theme === 'dark' ? 'none' : 'block';
+  document.getElementById('iconMoon').style.display = theme === 'dark' ? 'block' : 'none';
   try { localStorage.setItem('nexus-theme', theme); } catch(e) {}
 }
 function toggleTheme() {
@@ -1141,11 +1200,14 @@ function initTheme() {
 }
 
 function renderTabs() {
+  const closeIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
   document.getElementById('tabs-bar').innerHTML = tabs.map((t,i)=>`
     <div class="tab ${i===activeTab?'active':''} ${t.frozen?'frozen':''}" onclick="switchTab(${i})">
       <span class="tab-title">${t.frozen?'❄ ':''}${t.name}</span>
-      <span class="tab-close" onclick="closeTab(${i},event)">&times;</span>
-    </div>`).join('') + `<div id="new-tab-btn" onclick="newTab('normal')" title="New Tab">+</div><div id="new-incognito-btn" onclick="newTab('incognito')" title="Incognito">🕵️</div>`;
+      <span class="tab-close" onclick="closeTab(${i},event)">${closeIcon}</span>
+    </div>`).join('')
+    + `<div id="new-tab-btn" onclick="newTab('normal')" title="New Tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>`
+    + `<div id="new-incognito-btn" onclick="newTab('incognito')" title="Incognito"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.9 10.9 0 0 1 12 20c-7 0-11-8-11-8a21.4 21.4 0 0 1 4.2-5.5M9.9 4.2A10.8 10.8 0 0 1 12 4c7 0 11 8 11 8a21.4 21.4 0 0 1-2.6 3.9M14 14.2a3 3 0 1 1-4.2-4.2"/><line x1="2" y1="2" x2="22" y2="22"/></svg></div>`;
 }
 function newTab(m) { sr('new-tab',m); }
 function closeTab(i,e) { e.stopPropagation(); if(tabs.length>1) sr('close-tab',i); }
