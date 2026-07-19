@@ -218,9 +218,10 @@ mod state {
         }
         
         pub fn close_tab(&mut self, idx: usize) -> bool {
-            (self.tabs.len() > 1).then(|| {
+            (self.tabs.len() > 1 && idx < self.tabs.len()).then(|| {
                 self.tabs.remove(idx);
                 if self.active_tab >= idx && self.active_tab > 0 { self.active_tab -= 1; }
+                if self.active_tab >= self.tabs.len() { self.active_tab = self.tabs.len() - 1; }
             }).is_some()
         }
         
@@ -229,10 +230,20 @@ mod state {
         }
     }
     
-    #[derive(Clone, Debug, Default)]
+    #[derive(Clone, Debug)]
     pub struct GlobalConfig {
         pub ad: bool, pub trk: bool, pub sinkhole: bool, pub anti_fp: bool,
         pub auto_save_passwords: bool, pub show_password_suggestions: bool,
+    }
+
+    impl Default for GlobalConfig {
+        // Matches the sidebar checkboxes, which render pre-checked for these two options.
+        fn default() -> Self {
+            Self {
+                ad: true, trk: true, sinkhole: true, anti_fp: true,
+                auto_save_passwords: true, show_password_suggestions: true,
+            }
+        }
     }
     
     #[derive(Debug, Default, Clone)]
@@ -691,9 +702,22 @@ mod dl {
 mod search {
     pub fn resolve(i: &str) -> String {
         let t = i.trim();
-        if t.starts_with("http") || t.starts_with("nexus://") { t.into() }
-        else if t.contains('.') && !t.contains(' ') { format!("https://{}", t) }
-        else { format!("https://www.google.com/search?q={}", url::form_urlencoded::byte_serialize(t.as_bytes()).collect::<String>()) }
+        if t.is_empty() { return "nexus://home".into(); }
+        if t.starts_with("http://") || t.starts_with("https://") || t.starts_with("nexus://") { return t.into(); }
+
+        // Treat as a navigable host if it looks like a domain/IP/localhost and has no spaces.
+        let looks_like_host = !t.contains(' ')
+            && !t.starts_with('.') && !t.ends_with('.')
+            && (t.contains('.') || t.starts_with("localhost"));
+
+        if looks_like_host { format!("https://{}", t) }
+        else {
+            // Google's /search endpoint blocks non-browser clients with bot-detection /
+            // consent-cookie redirects, which is why in-app search used to silently fail.
+            // DuckDuckGo's HTML-only endpoint returns plain server-rendered results with
+            // no JS or cookie-consent step required.
+            format!("https://html.duckduckgo.com/html/?q={}", url::form_urlencoded::byte_serialize(t.as_bytes()).collect::<String>())
+        }
     }
 }
 
@@ -884,7 +908,9 @@ fn html() -> String {
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-:root{--bg:#dee1e6;--panel:#ffffff;--input:#f1f3f4;--brd:#dadce0;--acc:#1a73e8;--t1:#202124;--t2:#5f6368;--t3:#80868b}
+:root{--bg:#dee1e6;--panel:#ffffff;--input:#f1f3f4;--brd:#dadce0;--acc:#1a73e8;--acc-hover:#1557b0;--on-acc:#ffffff;--t1:#202124;--t2:#5f6368;--t3:#80868b}
+:root[data-theme="dark"]{--bg:#17181a;--panel:#222327;--input:#2c2d32;--brd:#3a3b40;--acc:#8ab4f8;--acc-hover:#aecbfa;--on-acc:#062e6f;--t1:#e8eaed;--t2:#b0b3b8;--t3:#8a8d93}
+html,body{transition:background-color .2s ease,color .2s ease}
 body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #app{display:flex;flex-direction:column;height:100vh}
 
@@ -911,7 +937,7 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 .bm-item{padding:4px 10px;border-radius:4px;font-size:13px;color:var(--t2);cursor:pointer;white-space:nowrap}
 .bm-item:hover{background:var(--input);color:var(--t1)}
 
-#workspace{flex:1;background:#fff;overflow:hidden;position:relative}
+#workspace{flex:1;background:var(--panel);overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
 #sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:1000;overflow-y:auto;transition:right 0.3s}
@@ -932,11 +958,11 @@ input:checked+.slider:before{transform:translateX(16px)}
 .modal.show{display:block}
 .modal-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--t1)}
 .modal-input{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);border-radius:4px;color:var(--t1);outline:none;font-size:14px}
-.modal-input:focus{border-color:var(--acc);background:#fff}
+.modal-input:focus{border-color:var(--acc);background:var(--panel)}
 .modal-btn{width:100%;padding:10px;margin:4px 0;background:var(--panel);border:1px solid var(--brd);color:var(--t1);cursor:pointer;font-weight:500;border-radius:4px;font-size:14px}
 .modal-btn:hover{background:var(--input)}
-.modal-btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
-.modal-btn.primary:hover{background:#1557b0}
+.modal-btn.primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.modal-btn.primary:hover{background:var(--acc-hover)}
 
 #dev-console{position:fixed;bottom:0;right:0;width:400px;height:200px;background:rgba(0,0,0,0.8);color:#0f0;border-radius:8px 0 0 0;padding:10px;font-size:12px;z-index:999;display:none;overflow-y:auto}
 #dev-console.show{display:block}
@@ -949,8 +975,8 @@ input:checked+.slider:before{transform:translateX(16px)}
 .popup-domain{font-size:13px;color:var(--t2);margin-bottom:8px}
 .popup-pass{font-family:monospace;background:var(--input);padding:8px;border-radius:4px;margin-bottom:12px;font-size:13px}
 .popup-actions{display:flex;gap:8px}
-.popup-btn{flex:1;padding:8px;border:1px solid var(--brd);background:#fff;border-radius:4px;cursor:pointer;font-size:13px}
-.popup-btn.primary{background:var(--acc);color:#fff;border:none}
+.popup-btn{flex:1;padding:8px;border:1px solid var(--brd);background:var(--panel);color:var(--t1);border-radius:4px;cursor:pointer;font-size:13px}
+.popup-btn.primary{background:var(--acc);color:var(--on-acc);border:none}
 
 .history-item{display:block;width:100%;text-align:left;padding:8px;border-bottom:1px solid var(--brd);cursor:pointer;font-size:13px;color:var(--t1)}
 .history-item:hover{background:var(--input)}
@@ -958,15 +984,17 @@ input:checked+.slider:before{transform:translateX(16px)}
 <div id="app">
   <div id="tabs-bar"></div>
   <div id="toolbar">
-    <button class="nav-btn" onclick="sr('back')">←</button>
-    <button class="nav-btn" onclick="sr('fwd')">→</button>
-    <button class="nav-btn" onclick="sr('ref')">⟳</button>
-    <input type="text" id="url-bar" data-i18n-placeholder="url_ph" placeholder="Search Google or type URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
+    <button class="nav-btn" onclick="sr('back')" title="Back (Alt+←)">←</button>
+    <button class="nav-btn" onclick="sr('fwd')" title="Forward (Alt+→)">→</button>
+    <button class="nav-btn" onclick="sr('ref')" title="Reload (Ctrl+R)">⟳</button>
+    <input type="text" id="url-bar" data-i18n-placeholder="url_ph" placeholder="Search or type URL" onkeydown="if(event.key==='Enter')sr('nav',this.value)">
     <button class="tool-btn" onclick="sr('bookmark', v('url-bar'))" data-i18n-title="bookmark" title="Bookmark">★</button>
-    <button class="tool-btn" onclick="toggleModal('history-modal')" data-i18n-title="history" title="History">🕒</button>
+    <button class="tool-btn" onclick="toggleModal('history-modal')" data-i18n-title="history" title="History (Ctrl+H)">🕒</button>
     <button class="tool-btn" onclick="toggleModal('vault')" data-i18n-title="vault" title="Vault">🔑</button>
     <button class="tool-btn" onclick="toggleModal('ai-modal')" data-i18n-title="ai" title="AI Assistant">🤖</button>
+    <button class="tool-btn" onclick="openExtensions()" data-i18n-title="extensions" title="Extensions">🧩</button>
     <button class="tool-btn" onclick="document.getElementById('dev-console').classList.toggle('show')" data-i18n-title="console" title="Console">💻</button>
+    <button class="tool-btn" onclick="toggleTheme()" id="theme-btn" data-i18n-title="theme" title="Toggle theme (Ctrl+Shift+L)">🌙</button>
     <button class="tool-btn" onclick="toggleLang()" id="lang-btn" title="Language">🇻🇳</button>
     <button class="tool-btn" onclick="toggleSidebar()" data-i18n-title="menu" title="Menu">≡</button>
   </div>
@@ -1033,6 +1061,12 @@ input:checked+.slider:before{transform:translateX(16px)}
     <button class="modal-btn" onclick="toggleModal('ai-modal')" data-i18n="close">Close</button>
   </div>
 
+  <div id="ext-modal" class="modal">
+    <div class="modal-title" data-i18n="extensions">Extensions</div>
+    <div id="ext-list" style="max-height:320px;overflow-y:auto;margin-bottom:16px;"></div>
+    <button class="modal-btn" onclick="toggleModal('ext-modal')" data-i18n="close">Close</button>
+  </div>
+
   <div id="pass-popup">
     <div class="popup-header"><div class="popup-title" data-i18n="save_pass">Save Password?</div><span class="popup-close" onclick="hidePassPopup()">&times;</span></div>
     <div class="popup-domain" id="suggest-domain"></div>
@@ -1051,13 +1085,13 @@ let lang = 'en';
 
 const i18n = {
   en: {
-    url_ph: "Search Google or type URL", bookmark: "Bookmark", history: "History", vault: "Vault", ai: "AI Assistant", console: "Console", menu: "Menu",
+    url_ph: "Search or type URL", bookmark: "Bookmark", history: "History (Ctrl+H)", vault: "Vault", ai: "AI Assistant", console: "Console", menu: "Menu", extensions: "Extensions", theme: "Toggle theme (Ctrl+Shift+L)",
     empty_bm: "No bookmarks. Click ★ to save.",
     settings: "Nexus Settings", connection: "CONNECTION", warp: "Cloudflare WARP", tor: "Tor Network",
     shields: "SHIELDS", ad: "Ad Blocker", trk: "Tracker Block", cookie: "Cookie Shield", sink: "Domain Sinkhole", anti_fp: "Anti-Fingerprint",
     passwords: "PASSWORDS", auto_save: "Auto Save", pass_suggest: "Password Suggest",
     sync: "SYNC", sync_now: "Sync Now",
-    history_title: "History", empty_hist: "No history yet.",
+    history_title: "History", empty_hist: "No history yet.", no_ext: "No extensions installed.",
     vault_title: "Vault", master_ph: "Master Password", domain_ph: "Domain", user_ph: "Username", pass_ph: "Password",
     save: "Save", retrieve: "Retrieve", gen: "Generate", close: "Close",
     ai_title: "AI Assistant", ask_ph: "Ask anything...", ask: "Ask",
@@ -1066,13 +1100,13 @@ const i18n = {
     master_req: "Please enter Master Password in Vault before saving!", synced: "Synced: Chrome({}), Firefox({}), Edge({})"
   },
   vi: {
-    url_ph: "Tìm kiếm Google hoặc nhập URL", bookmark: "Lưu trang", history: "Lịch sử", vault: "Kho mật khẩu", ai: "Trợ lý AI", console: "Console", menu: "Menu",
+    url_ph: "Tìm kiếm hoặc nhập URL", bookmark: "Lưu trang", history: "Lịch sử (Ctrl+H)", vault: "Kho mật khẩu", ai: "Trợ lý AI", console: "Console", menu: "Menu", extensions: "Tiện ích mở rộng", theme: "Đổi giao diện (Ctrl+Shift+L)",
     empty_bm: "Chưa có dấu trang. Bấm ★ để lưu trang hiện tại.",
     settings: "Cài đặt Nexus", connection: "KẾT NỐI", warp: "Cloudflare WARP", tor: "Mạng Tor",
     shields: "LÁ CHẮN", ad: "Chặn Quảng cáo", trk: "Chặn Tracker", cookie: "Bảo vệ Cookie", sink: "Chặn Domain", anti_fp: "Anti-Fingerprint",
     passwords: "MẬT KHẨU", auto_save: "Tự động lưu", pass_suggest: "Gợi ý mật khẩu",
     sync: "ĐỒNG BỘ HÒA", sync_now: "Đồng bộ ngay",
-    history_title: "Lịch sử duyệt web", empty_hist: "Chưa có lịch sử.",
+    history_title: "Lịch sử duyệt web", empty_hist: "Chưa có lịch sử.", no_ext: "Chưa có tiện ích mở rộng nào.",
     vault_title: "Kho Mật Khẩu", master_ph: "Mật khẩu chính", domain_ph: "Tên miền", user_ph: "Tên đăng nhập", pass_ph: "Mật khẩu",
     save: "Lưu", retrieve: "Lấy mật khẩu", gen: "Tạo mật khẩu", close: "Đóng",
     ai_title: "Trợ lý AI", ask_ph: "Nhập câu hỏi...", ask: "Hỏi AI",
@@ -1089,6 +1123,22 @@ function applyLang() {
   document.getElementById('lang-btn').textContent = lang === 'en' ? '🇻🇳' : '🇬🇧';
 }
 function toggleLang() { lang = lang === 'en' ? 'vi' : 'en'; applyLang(); }
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('theme-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
+  try { localStorage.setItem('nexus-theme', theme); } catch(e) {}
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('nexus-theme'); } catch(e) {}
+  if (saved === 'dark' || saved === 'light') { applyTheme(saved); return; }
+  applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+}
 
 function renderTabs() {
   document.getElementById('tabs-bar').innerHTML = tabs.map((t,i)=>`
@@ -1119,6 +1169,23 @@ function renderHistory(hist) {
   list.innerHTML = hist.reverse().map(h => `<div class="history-item" onclick="sr('nav','${h.url}');toggleModal('history-modal')">${h.title} <span style="color:var(--t3);font-size:11px;">(${new Date(h.time*1000).toLocaleString()})</span></div>`).join('');
 }
 
+function openExtensions(){ sr('ext-list'); toggleModal('ext-modal'); }
+function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function renderExtensions(list){
+  const c = document.getElementById('ext-list');
+  if(!list || list.length===0){ c.innerHTML = `<p style="color:var(--t2)">${i18n[lang].no_ext}</p>`; return; }
+  c.innerHTML = list.map((e,i)=>`
+    <div class="row" style="align-items:flex-start;flex-direction:column;padding:10px 0;border-bottom:1px solid var(--brd)">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+        <div><b>${escAttr(e.name)}</b> <span style="color:var(--t3);font-size:11px">v${escAttr(e.version)}</span></div>
+        <label class="switch"><input type="checkbox" data-ext-idx="${i}" ${e.enabled?'checked':''} onchange="toggleExt(${i},this.checked)"><span class="slider"></span></label>
+      </div>
+      <div style="color:var(--t2);font-size:12px;margin-top:4px">${escAttr(e.description||'')}</div>
+    </div>`).join('');
+  window._extList = list;
+}
+function toggleExt(i,enabled){ const e=(window._extList||[])[i]; if(e) sr('ext-toggle',{id:e.id,enabled}); }
+
 function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
 function v(id){return document.getElementById(id).value}
@@ -1129,7 +1196,7 @@ function vAct(a){sr('vault',{a,m:v('v-master'),d:v('v-domain'),u:v('v-user'),p:v
 function vRes(t){document.getElementById('v-res').textContent=t}
 function aiCfg(){sr('ai_cfg',{e:v('ai-endpoint'),k:v('ai-key'),m:v('ai-model')})}
 function aiAsk(){const q=v('ai-prompt');if(q){sr('ai',q);document.getElementById('ai-prompt').value=''}}
-function addAi(t){document.getElementById('ai-log').innerHTML+=`<div style="margin:4px 0;padding:6px;background:#f1f3f4;border-radius:4px">${t}</div>`}
+function addAi(t){document.getElementById('ai-log').innerHTML+=`<div style="margin:4px 0;padding:6px;background:var(--input);border-radius:4px">${t}</div>`}
 
 function showPassPopup(d) {
   document.getElementById('suggest-domain').textContent = new URL(d.url).hostname;
@@ -1166,6 +1233,8 @@ window.addEventListener('message',function(event) {
     else if (data.a === 'new-tab-url') sr('new-tab-url', data.p);
     else if (data.a === 'console-log') lg(data.p);
     else if (data.a === 'inc') sr('inc', '');
+    else if (data.a === 'ext-list-response') renderExtensions(data.p);
+    else if (data.a === 'ext-toggle-response') { /* checkbox already reflects the click; list stays in sync on next open */ }
   } catch (e) {}
 });
 
@@ -1175,6 +1244,39 @@ window.updateTabs = function(d) {
   document.getElementById('url-bar').value = url === 'nexus://home' ? '' : url;
 }
 
+function closeTopmostOverlay() {
+  const openModal = document.querySelector('.modal.show');
+  if (openModal) { openModal.classList.remove('show'); return true; }
+  if (document.getElementById('sidebar').classList.contains('open')) { toggleSidebar(); return true; }
+  if (document.getElementById('pass-popup').style.display === 'block') { hidePassPopup(); return true; }
+  if (document.getElementById('dev-console').classList.contains('show')) { document.getElementById('dev-console').classList.remove('show'); return true; }
+  return false;
+}
+
+document.addEventListener('keydown', function(e) {
+  const typingInField = /^(input|textarea)$/i.test(document.activeElement.tagName);
+  const mod = e.ctrlKey || e.metaKey;
+
+  if (e.key === 'Escape') { closeTopmostOverlay(); return; }
+
+  if (mod && e.shiftKey && (e.key === 'L' || e.key === 'l')) { e.preventDefault(); toggleTheme(); return; }
+  if (mod && e.shiftKey && (e.key === 'N' || e.key === 'n')) { e.preventDefault(); newTab('incognito'); return; }
+  if (mod && (e.key === 't' || e.key === 'T')) { e.preventDefault(); newTab('normal'); return; }
+  if (mod && (e.key === 'w' || e.key === 'W')) { e.preventDefault(); if (tabs.length > 1) sr('close-tab', activeTab); return; }
+  if (mod && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); const b = document.getElementById('url-bar'); b.focus(); b.select(); return; }
+  if (mod && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); toggleModal('history-modal'); return; }
+  if (mod && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); sr('ref'); return; }
+  if (!typingInField && e.key === 'F5') { e.preventDefault(); sr('ref'); return; }
+  if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); sr('back'); return; }
+  if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); sr('fwd'); return; }
+  if (!typingInField && mod && e.key >= '1' && e.key <= '9') {
+    e.preventDefault();
+    const idx = e.key === '9' ? tabs.length - 1 : Math.min(parseInt(e.key,10) - 1, tabs.length - 1);
+    switchTab(idx);
+  }
+});
+
+initTheme();
 applyLang();
 renderTabs();
 </script></body></html>"###.into()
@@ -1186,7 +1288,7 @@ renderTabs();
 fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<Ev>) {
     if let (Ok(h), Ok(u)) = (serde_json::to_string(html_out), serde_json::to_string(url)) {
         let _ = px.send_event(Ev::Js(format!(
-            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:#fff;';f.srcdoc={};w.appendChild(f);",
+            "let w=document.getElementById('workspace');w.innerHTML='';let f=document.createElement('iframe');f.sandbox='allow-scripts allow-same-origin allow-forms allow-presentation allow-popups';f.style='width:100%;height:100%;border:none;background:var(--panel);';f.srcdoc={};w.appendChild(f);",
             h
         )));
         let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", u)));
@@ -1208,11 +1310,15 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         <!DOCTYPE html><html><head><style>
         body { background: #fff; color: #202124; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         h1 { font-size: 4rem; color: #1a73e8; margin-bottom: 10px; font-weight: 300; }
-        .search { width: 60%; max-width: 600px; padding: 14px 24px; border-radius: 24px; border: 1px solid #dadce0; box-shadow: 0 1px 6px rgba(32,33,36,0.28); font-size: 16px; outline: none; }
+        .search { width: 60%; max-width: 600px; padding: 14px 24px; border-radius: 24px; border: 1px solid #dadce0; box-shadow: 0 1px 6px rgba(32,33,36,0.28); font-size: 16px; outline: none; background: #fff; color: #202124; }
         .search:focus { border-color: #1a73e8; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #1a1a1e; color: #e8eaed; }
+            .search { background: #2f2f35; color: #e8eaed; border-color: #3a3a40; }
+        }
         </style></head><body>
         <h1>Nexus</h1>
-        <input type="text" class="search" placeholder="Search Google..." onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
+        <input type="text" class="search" placeholder="Search the web..." autofocus onkeydown="if(event.key==='Enter') window.top.postMessage(JSON.stringify({a:'nav-internal', p: this.value}), '*')">
         </body></html>
         "#;
         render_page(home_html, &url, px);
@@ -1269,7 +1375,11 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         client.get(&clean_url)
     };
     
-    if let Ok(r) = req.header("Referer", "").header("DNT", "1").send().await {
+    if let Ok(r) = req
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+        .header("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
+        .header("DNT", "1")
+        .send().await {
         let content_type = r.headers().get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok()).unwrap_or("text/html").to_lowercase();
 
@@ -1289,10 +1399,14 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
                 } else { format!("{}{}", inj, h) };
                 
                 let extensions = extensions::load_all_extensions().await;
-                if let (Some(js), Some(css)) = extensions::get_injections_for_url(&clean_url, &extensions).await {
+                let (ext_js, ext_css) = extensions::get_injections_for_url(&clean_url, &extensions).await;
+                if ext_js.is_some() || ext_css.is_some() {
                     let ext_api = r#"<script>if(typeof chrome==='undefined'){window.chrome={runtime:{sendMessage:function(m,c){window.top.postMessage(JSON.stringify({a:'ext-msg',p:m}),'*');}}}}</script>"#;
-                    let ext_inj = format!(r#"<style id="nexus-ext-css">{}</style><script id="nexus-ext-js">{}</script>"#, css, js);
-                    if let Some(body_end) = html_out.rfind("</body>") { html_out.insert_str(body_end, &ext_inj); }
+                    let css_tag = ext_css.map(|c| format!(r#"<style id="nexus-ext-css">{}</style>"#, c)).unwrap_or_default();
+                    let js_tag = ext_js.map(|j| format!(r#"<script id="nexus-ext-js">{}</script>"#, j)).unwrap_or_default();
+                    let ext_inj = format!("{}{}{}", ext_api, css_tag, js_tag);
+                    let lower_out = html_out.to_ascii_lowercase();
+                    if let Some(body_end) = lower_out.rfind("</body>") { html_out.insert_str(body_end, &ext_inj); }
                     else { html_out.push_str(&ext_inj); }
                 }
                 render_page(&html_out, &clean_url, px);
@@ -1537,8 +1651,15 @@ fn main() {
                         if let Some(url) = g.active_tab().current() { drop(g); load_url(url, ist.clone(), &ipx, false).await; }
                     },
                     "unfreeze-tab" => if let Some(i) = d.as_u64() {
-                        let url = { let mut g = ist.write().await; let tab = &mut g.tabs[i as usize]; tab.frozen = false; tab.last_active = Instant::now(); tab.url.clone() };
-                        let mut g = ist.write().await; g.switch_tab(i as usize); update_tabs(&g, &ipx); drop(g);
+                        let idx = i as usize;
+                        let url = {
+                            let mut g = ist.write().await;
+                            match g.tabs.get_mut(idx) {
+                                Some(tab) => { tab.frozen = false; tab.last_active = Instant::now(); tab.url.clone() }
+                                None => return,
+                            }
+                        };
+                        let mut g = ist.write().await; g.switch_tab(idx); update_tabs(&g, &ipx); drop(g);
                         load_url(url, ist.clone(), &ipx, false).await;
                     },
                     "password-detected" => {
@@ -1593,11 +1714,13 @@ fn main() {
                         ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-list-response',p:{}}}));"#, serde_json::to_string(&ext_data).unwrap_or_default()))).ok();
                     },
                     "ext-toggle" => if let (Some(id), Some(enabled)) = (d["id"].as_str(), d["enabled"].as_bool()) {
+                        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") { return; }
                         let ext_dir = std::path::Path::new("nexus_extensions").join(id);
                         if ext_dir.exists() {
                             if enabled { std::fs::remove_file(ext_dir.join("DISABLED")).ok(); }
                             else { std::fs::write(ext_dir.join("DISABLED"), "").ok(); }
-                            ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:'{}',enabled:{}}}}}));"#, id, enabled))).ok();
+                            let id_js = serde_json::to_string(id).unwrap_or_default();
+                            ipx.send_event(Ev::Js(format!(r#"if(window.postMessage)window.postMessage(JSON.stringify({{a:'ext-toggle-response',p:{{id:{},enabled:{}}}}}));"#, id_js, enabled))).ok();
                         }
                     },
                     "ext-msg" => { ipx.send_event(Ev::Js(format!("lg('Extension message: {}');", d))).ok(); },
@@ -1611,12 +1734,23 @@ fn main() {
     extensions::api::setup_extension_apis(&wv);
     
     let px_clone = px.clone();
+    let st_detect = st.clone();
     rt.spawn(async move {
         let warp_detected = autoconfig::detect_warp();
         let tor_detected = autoconfig::detect_tor().await;
+        // Previously this only ticked the checkboxes for show; the actual TabConfig (and
+        // therefore the reqwest client) stayed unrouted until the user manually re-toggled
+        // the switch, silently leaving traffic unprotected despite the UI claiming otherwise.
+        if warp_detected || tor_detected {
+            let mut g = st_detect.write().await;
+            let tab = g.active_tab_mut();
+            if warp_detected && !tor_detected { tab.cfg.warp = true; }
+            if tor_detected { tab.cfg.tor = true; tab.cfg.warp = false; }
+            tab.update_client();
+        }
         let _ = px_clone.send_event(Ev::Js(format!(
             "document.getElementById('warp-toggle').checked = {}; document.getElementById('tor-toggle').checked = {};",
-            warp_detected, tor_detected
+            warp_detected && !tor_detected, tor_detected
         )));
     });
     
