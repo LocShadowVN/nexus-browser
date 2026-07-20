@@ -326,6 +326,13 @@ mod net {
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .cookie_provider(jar)
             .danger_accept_invalid_certs(false)
+            // Skip the IPv6-then-timeout-then-IPv4 dance: without this, a host that
+            // publishes AAAA records but sits behind a dead/blackholed IPv6 route on the
+            // user's network costs a full connect-timeout (multiple seconds) on every
+            // fresh connection before falling back to IPv4. Most networks that are broken
+            // this way are broken symmetrically for every site, not just one, so defaulting
+            // straight to IPv4 avoids paying that tax everywhere.
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .timeout(Duration::from_secs(30));
         
         if c.tor { b = b.proxy(reqwest::Proxy::all("socks5h://127.0.0.1:9050").unwrap()); }
