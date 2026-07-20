@@ -109,7 +109,7 @@ NEXUS is open to contributions from the Rust community and privacy-minded develo
 
 ## License
 
-Distributed under **MPL-2.0 OR Apache-2.0** — see [`LICENSE`](LICENSE) for details. No paid tier, no plans for one.
+Distributed under **MPL-2.0 OR Apache-2.0** — see LICENSE-MPL and LICENSE-APACHE for details. No paid tier, no plans for one.
 
 <div align="center">
 <br>
