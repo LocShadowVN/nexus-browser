@@ -1,126 +1,117 @@
-
 <div align="center">
-  <img src="nexus-banner.svg" alt="Nexus Browser Banner" width="600"/>
-  
-  <h3>The Next-Generation Browser: Ultra-Secure, High-Performance, and AI-Native.</h3>
-  <p>Built entirely from the ground up in Rust, Nexus is not just a browser—it is your personal digital fortress.</p>
+  <img src="nexus-banner.svg" alt="NEXUS Browser" width="600"/>
 
-  [![Rust](https://img.shields.io/badge/Built_with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+  <p><b>A privacy-first, high-performance desktop browser, built from scratch in Rust.</b></p>
+
+  [![Rust](https://img.shields.io/badge/Built_with-Rust-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org/)
   [![License](https://img.shields.io/badge/License-MPL%202.0%20OR%20Apache--2.0-blue)](LICENSE)
-  [![AI Architected](https://img.shields.io/badge/Architected%20by-Claude%20%7C%20Qwen%20%7C%20GLM%205.2-8A2BE2)](#-ai-assistant)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-informational)](#system-requirements)
 </div>
 
----
+<br>
 
-## 🚀 Introduction
+## Table of Contents
+- [Introduction](#introduction)
+- [How It Compares](#how-it-compares)
+- [Key Features](#key-features)
+- [System Requirements](#system-requirements)
+- [Tor & WARP Setup](#tor--warp-setup)
+- [AI Assistant Setup](#ai-assistant-setup)
+- [Development Notes](#development-notes)
+- [Contributing](#contributing)
+- [License](#license)
 
-Nexus Browser was created with a single goal: **to return absolute control of data and privacy to the user.** 
+## Introduction
 
-While traditional browsers are becoming bloated, resource-heavy, and increasingly intrusive, Nexus is built with `wry` and `tao` to deliver a lightweight, silky-smooth experience. We combine a military-grade security layer with a deeply integrated AI engine, powered by the world's leading models.
+NEXUS is a desktop browser built from the ground up in Rust, on top of `wry` and `tao` rather than a full Chromium build. The goal is straightforward: a browser that doesn't phone home, doesn't need a paid tier, and doesn't quietly eat your RAM in the background.
 
-### 🧠 Architected & Built By
-This entire project was architected, coded, and refined through the collaboration of the world's most advanced AI models:
-- **Anthropic Claude** (Deep architectural analysis & nuanced system design)
-- **Alibaba Qwen** (Lightning-fast code generation & multi-language mastery)
-- **Zhipu AI GLM 5.2** (Advanced logic reasoning & mathematical optimization)
+It ships with an encrypted password vault, ad/tracker blocking, one-click Tor and Cloudflare WARP routing, and a native AI assistant you connect with your own API key — nothing sits between you and the model you choose.
 
----
+## How It Compares
 
-## ⚖️ Nexus vs. Chrome vs. Brave
+The numbers below are from our own casual testing, not an independent benchmark — treat them as a general shape, not a guarantee.
 
-Why switch to Nexus?
+| Feature | NEXUS | Chrome | Brave |
+|---|:---:|:---:|:---:|
+| Core engine | Rust + OS WebView | Chromium (C++) | Chromium (C++) |
+| Telemetry | None | Heavy | Anonymized |
+| Idle RAM (approx.) | Low | High | Moderate |
+| Ad / tracker blocking | Built in | Extension required | Built in |
+| Password vault | AES-256-GCM + Argon2id | Basic | Basic |
+| Tor / WARP, one click | Yes | No | No (Tor only via a separate extension) |
+| Native AI, bring-your-own-key | Yes | No | Brave Leo only |
+| Multi-threaded downloads | Yes, segmented | Limited | Limited |
+| Complex web-app compatibility | Good, not universal | Complete | Complete |
 
-| Feature | 🌌 Nexus Browser | 🌐 Google Chrome | 🦁 Brave Browser |
-| :--- | :---: | :---: | :---: |
-| **Core Language** | 🦀 **Rust** (Memory-safe) | C++ (Prone to memory leaks) | C++ (Chromium base) |
-| **Telemetry / Tracking** | ❌ **Absolutely NONE** | ✅ Heavy | ⚠️ Anonymized |
-| **RAM / Resource Usage** | 🟢 **Extremely Low** (~50-100MB) | 🔴 Very High | 🟡 High |
-| **Adblock (YouTube)** | ✅ Built-in (Deep JS Injection) | ❌ Needs Extension | ✅ Built-in (Shields) |
-| **Anti-Fingerprint (Canvas/WebGL)**| ✅ **Built-in** | ❌ None | ✅ Basic |
-| **Password Vault** | ✅ **AES-256-GCM + Argon2id** | ❌ Weak/Plain | ⚠️ Basic |
-| **Tab Freezing** | ✅ **Auto-freeze after 5 mins** | ✅ Yes (Laggy) | ✅ Yes |
-| **Tor / WARP Integration** | ✅ **1-Click Native Proxy** | ❌ Needs external app | ❌ No WARP |
-| **Built-in AI Assistant** | ✅ **Claude, Qwen, GLM 5.2** | ❌ None | ⚠️ Brave Leo |
-| **Multi-thread Download** | ✅ **16 Threads (Parts)** | ❌ 1 Thread | ❌ 1 Thread |
+NEXUS runs on the OS's native WebView instead of shipping Chromium — that's most of where the memory savings come from, and also where the occasional compatibility gap with very complex web apps comes from.
 
----
+## Key Features
 
-## 🛡️ Key Features
+### Privacy & Security
+- Ad and tracker blocking, including YouTube ad-skip
+- Blocks common tracking cookies and intercepts tracker-related `fetch` / `XHR` / `sendBeacon` calls
+- Reduces canvas/WebGL/hardware-concurrency fingerprinting surface
+- DNS-level sinkhole for known ad and malware domains
+- HTTPS upgrading and stripping of tracking parameters (`utm_*`, `gclid`, `fbclid`) from URLs
 
-### 1. Nexus Shield (Comprehensive Security)
-- **Adblock & YouTube Ad-Killer:** Blocks ads entirely and auto-clicks "Skip Ad" on YouTube.
-- **Tracker Blocker:** Intercepts `fetch`, `XMLHttpRequest`, and `sendBeacon` to prevent data exfiltration.
-- **Cookie Shield:** Filters and blocks cross-site tracking cookies (`_ga`, `fbp`).
-- **Anti-Fingerprint:** Spoofs Canvas, WebGL, Hardware Concurrency, and Device Memory to make your browser "invisible."
-- **Domain Sinkhole:** Blocks DNS requests to known adware/malware domains.
+> Anti-fingerprinting reduces what a site can read about your machine — it isn't full anonymity. Pair it with Tor if that's what you need.
 
-### 2. Nexus Vault (Unbreakable Password Manager)
-- Passwords are encrypted using military-grade **AES-256-GCM**.
-- Utilizes **Argon2id** (Password Hashing Competition winner) to protect against brute-force attacks.
-- 100% local storage. Your data never touches the cloud.
+### Encrypted Vault
+Passwords are stored locally, encrypted with AES-256-GCM, with the key derived via Argon2id. Nothing syncs to a server, because there isn't one.
 
-### 3. AI Assistant (Always at your fingertips)
-- Integrated directly into the toolbar. No need to open a new tab.
-- Fully customizable API Endpoint to connect to Claude, Qwen, GLM 5.2, or any OpenAI-compatible LLM.
-- Retains conversation context (memory) up to 40 messages.
+### AI Assistant
+A toolbar-integrated assistant you configure with your own API endpoint, key, and model — Claude, Qwen, GLM, GPT, or anything else that speaks a compatible API. Requests go straight from your machine to that provider.
 
-### 4. Maximum Performance
-- **Tab Freezing:** Background tabs inactive for 5 minutes are automatically "frozen" to free up RAM and CPU.
-- **Turbo Downloader:** Automatically splits downloads into 16 concurrent chunks, boosting download speeds by up to 500%.
-- **Rust Async Core:** Uses `Tokio` runtime for non-blocking UI and lightning-fast network requests.
+### Performance
+- Background tabs idle for 5+ minutes are automatically suspended to free up RAM and CPU
+- Downloads split into up to 16 concurrent chunks on servers that support range requests — actual speedup depends on your connection and the server, not a fixed number
+- Built on Tokio's async runtime for non-blocking networking
 
-### 5. Anonymity Layer (1-Click Cloaking)
-- Instantly route traffic through the **Tor Network**.
-- Instantly switch to **Cloudflare WARP**.
-- Enforces HTTPS (HSTS) and strips tracking parameters (`utm_*`, `gclid`, `fbclid`) from URLs.
+### Anonymity
+- One-click routing of a tab through Tor or Cloudflare WARP (requires their official client already running locally — see setup below)
 
----
+## System Requirements
 
-## 💻 System Requirements
+| Component | Minimum |
+|---|---|
+| **OS** | Windows 10/11 (64-bit), macOS 11+ (Big Sur), Linux (Ubuntu 20.04+, Fedora 34+, Arch) |
+| **CPU** | Dual-core 64-bit (Intel Core i3 / AMD Ryzen 3 class or better) |
+| **RAM** | 2 GB (NEXUS itself idles low; web pages will use their own memory as usual) |
+| **Storage** | 150 MB free |
+| **Graphics** | WebGL support (integrated graphics such as Intel UHD are fine) |
 
-To run Nexus Browser smoothly, your machine should meet the following minimum specifications:
+## Tor & WARP Setup
 
-| Component | Minimum Requirements |
-| :--- | :--- |
-| **Operating System** | Windows 10/11 (64-bit), macOS 11.0 (Big Sur) or later, Linux (Ubuntu 20.04+, Fedora 34+, Arch) |
-| **Processor (CPU)** | Dual-core 64-bit processor (Intel Core i3 / AMD Ryzen 3 equivalent) |
-| **Memory (RAM)** | 2 GB RAM (Nexus itself uses ~100MB, but web pages require memory) |
-| **Storage** | 150 MB of free disk space |
-| **Graphics** | Graphics card with WebGL support (Integrated graphics like Intel UHD are fine) |
+The one-click Tor / WARP toggles in NEXUS route traffic through a local proxy — they don't bundle or replace either client, so you need the real thing running first:
 
----
+1. **Tor:** install [Tor Browser](https://www.torproject.org/download/) or the Tor daemon, and make sure it's listening on `127.0.0.1:9050`.
+2. **Cloudflare WARP:** install [Cloudflare WARP](https://1.1.1.1/), and make sure it's actually running in **local proxy mode** on `127.0.0.1:2053` — the default consumer toggle runs WARP as a system-wide VPN instead, which won't work with this integration.
 
-## 📥 Prerequisites for Tor & WARP Integration
+Once one of those is genuinely listening, flip the matching switch in the NEXUS sidebar.
 
-To use the 1-click Tor and Cloudflare WARP proxy features inside Nexus, you need to have their official clients installed and running on your machine:
+## AI Assistant Setup
 
-1. **For Tor Network:** Please download and install the [Tor Browser](https://www.torproject.org/download/). Ensure the Tor service is running in the background (listening on `127.0.0.1:9050`).
-2. **For Cloudflare WARP:** Please download and install [Cloudflare WARP VPN](https://1.1.1.1/). Ensure the WARP local proxy mode is active (listening on `127.0.0.1:2053`).
+1. Open NEXUS and click the AI icon in the toolbar.
+2. Enter an API endpoint (e.g. `https://api.anthropic.com/v1/messages`, `https://api.openai.com/v1/chat/completions`, or a local server).
+3. Enter your API key.
+4. Enter the model name (e.g. `claude-sonnet-4-6`, `qwen-max`, `glm-5.2`).
+5. Save and start chatting.
 
-Once they are running, simply toggle the switches in the Nexus sidebar to route your browser traffic through them!
+Your prompts go directly to whichever endpoint you configure — NEXUS doesn't proxy or log them.
 
----
+## Development Notes
 
-## ⚙️ AI Configuration
+NEXUS is written and maintained by [**@LocShadowVN**](https://github.com/LocShadowVN), with AI coding assistants (Claude, Qwen, GLM) used throughout the build for implementation help and debugging. The architecture, tradeoffs, and final review are human-driven — the AI tools sped up typing, not decision-making.
 
-To use the AI Assistant in Nexus:
-1. Open Nexus and click the 🤖 icon in the toolbar.
-2. Enter the API Endpoint (e.g., `https://api.openai.com/v1/chat/completions` or your local server).
-3. Enter your API Key.
-4. Enter the Model Name (e.g., `claude-3-5-sonnet-20241022`, `qwen-max`, `glm-5.2`).
-5. Save and start chatting!
+## Contributing
 
----
+NEXUS is open to contributions from the Rust community and privacy-minded developers. Found a bug or have a feature idea? Open an issue or a pull request.
 
-## 🤝 Contributing
+## License
 
-Nexus is an open project and welcomes contributions from the Rust community and privacy enthusiasts alike. If you find a bug or want to propose a new feature, please open an Issue or Pull Request.
-
-## 📜 License
-
-This project is distributed under the **MPL-2.0 OR Apache-2.0** license. See the `LICENSE` file for details.
+Distributed under **MPL-2.0 OR Apache-2.0** — see [`LICENSE`](LICENSE) for details. No paid tier, no plans for one.
 
 <div align="center">
-Made with ❤️, 🐉, and 🦀 Rust.
+<br>
+Built in Rust, by one developer who'd rather own a browser than rent one. 🦀
 </div>
-```
