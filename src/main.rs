@@ -435,17 +435,20 @@ mod injection {
         document.addEventListener('click', function(e) {
             let a = e.target.closest('a');
             if (a && a.href && !a.href.startsWith('javascript:') && !a.href.startsWith('#')) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
                 if (a.target === '_blank') {
-                    e.preventDefault();
                     window.top.postMessage(JSON.stringify({a: 'new-tab-url', p: a.href}), '*');
                 } else {
-                    e.preventDefault();
                     window.top.postMessage(JSON.stringify({a: 'nav-internal', p: a.href}), '*');
                 }
             }
         }, true);
         
         document.addEventListener('submit', function(e) {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             let form = e.target;
             let method = (form.method || 'get').toLowerCase();
             e.preventDefault();
@@ -886,13 +889,13 @@ mod extensions {
 mod autoconfig {
     use super::*;
     
-    pub fn detect_warp() -> bool {
-        #[cfg(target_os = "windows")]
-        { std::process::Command::new("sc").args(["query", "CloudflareWARP"]).output().map(|o| o.status.success()).unwrap_or(false) }
-        #[cfg(target_os = "macos")]
-        { std::process::Command::new("launchctl").args(["list", "com.cloudflare.1.1.1.1"]).output().map(|o| o.status.success()).unwrap_or(false) }
-        #[cfg(target_os = "linux")]
-        { std::process::Command::new("systemctl").args(["is-active", "cloudflare-warp"]).output().map(|o| o.status.success()).unwrap_or(false) }
+    pub async fn detect_warp() -> bool {
+        // Checking OS service registration (previous approach) only proves WARP is *installed*,
+        // not that it's running in local-proxy mode on this port — the default WARP desktop
+        // toggle runs as a system-wide VPN tunnel with nothing listening here at all. Test the
+        // actual port instead, same as detect_tor(), so we never claim a proxy is usable when
+        // it isn't.
+        tokio::net::TcpStream::connect("127.0.0.1:2053").await.is_ok()
     }
     
     pub async fn detect_tor() -> bool {
@@ -1365,7 +1368,25 @@ async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &tao::event_lo
 }
 
 async fn load_url_method(url: String, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
+    // DuckDuckGo's /html/ results wrap every outbound link through a duckduckgo.com/l/?uddg=...
+    // click-redirect. That's an extra network hop through a host we don't need to touch at all —
+    // decode the real target and go there directly instead.
+    let url = {
+        if let Ok(parsed) = url::Url::parse(&url) {
+            let is_ddg_redirect = matches!(parsed.host_str(), Some("duckduckgo.com") | Some("www.duckduckgo.com"))
+                && parsed.path() == "/l/";
+            if is_ddg_redirect {
+                parsed.query_pairs().find(|(k, _)| k == "uddg").map(|(_, v)| v.into_owned()).unwrap_or(url)
+            } else { url }
+        } else { url }
+    };
+
     let cfg = { let g = st.read().await; g.active_tab().cfg.clone() };
+    let load_started_safe = url.replace('\'', "\\'").replace('\n', " ");
+    if url != "nexus://home" {
+        let proxy_note = if cfg.tor { " via Tor" } else if cfg.warp { " via WARP" } else { "" };
+        let _ = px.send_event(Ev::Js(format!("lg('→ loading {}{}');", load_started_safe, proxy_note)));
+    }
     
     if url == "nexus://home" {
         let home_html = r#"
@@ -1437,12 +1458,18 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         client.get(&clean_url)
     };
     
-    if let Ok(r) = req
+    let t_start = std::time::Instant::now();
+    let response = req
         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
         .header("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
         .header("Accept-Encoding", "identity")
         .header("DNT", "1")
-        .send().await {
+        .send().await;
+    let elapsed_ms = t_start.elapsed().as_millis();
+    let err_detail = response.as_ref().err().map(|e| e.to_string()).unwrap_or_default();
+
+    if let Ok(r) = response {
+        let _ = px.send_event(Ev::Js(format!("lg('← {} in {}ms — {}');", r.status().as_u16(), elapsed_ms, load_started_safe)));
         let status = r.status();
         let content_type = r.headers().get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok()).unwrap_or("text/html").to_lowercase();
@@ -1515,7 +1542,19 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         }
     } else {
         let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
-        let _ = px.send_event(Ev::Js(format!("lg('Failed to load: {}');", safe_url)));
+        let safe_err = err_detail.replace('\'', "\\'").replace('\n', " ");
+        let _ = px.send_event(Ev::Js(format!("lg('✗ failed after {}ms: {} — {}');", elapsed_ms, safe_url, safe_err)));
+        let safe_display = clean_url.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+        let safe_err_display = err_detail.replace('&', "&amp;").replace('<', "&lt;");
+        let html = format!(
+            r#"<html><body style="font-family:sans-serif;padding:60px;text-align:center;color:#5f6368">
+            <h2>Couldn't reach this page</h2>
+            <p>NEXUS couldn't connect to <b>{}</b> (waited {}ms).</p>
+            <p style="color:#80868b;font-size:13px;max-width:520px;margin:12px auto 0">{}</p>
+            <p style="color:#80868b;font-size:13px">This can happen if the site is down, your network is blocking it,
+            or (if Tor/WARP is on) the proxy isn't actually running.</p>
+            </body></html>"#, safe_display, elapsed_ms, safe_err_display);
+        render_page(&html, &clean_url, px);
     }
 }
 
@@ -1807,7 +1846,7 @@ fn main() {
     let px_clone = px.clone();
     let st_detect = st.clone();
     rt.spawn(async move {
-        let warp_detected = autoconfig::detect_warp();
+        let warp_detected = autoconfig::detect_warp().await;
         let tor_detected = autoconfig::detect_tor().await;
         // Previously this only ticked the checkboxes for show; the actual TabConfig (and
         // therefore the reqwest client) stayed unrouted until the user manually re-toggled
