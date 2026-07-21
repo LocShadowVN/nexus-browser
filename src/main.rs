@@ -100,6 +100,8 @@ mod state {
         pub client: Option<reqwest::Client>,
         pub client_cfg_hash: u64,
         pub vault: Option<Vec<VaultEntry>>,
+        pub last_html: Option<String>,
+        pub load_gen: u64,
     }
     
     impl TabState {
@@ -129,6 +131,8 @@ mod state {
                 client: None,
                 client_cfg_hash: 0,
                 vault: if is_incog { None } else { Some(Vec::new()) },
+                last_html: None,
+                load_gen: 0,
             }
         }
         
@@ -942,7 +946,10 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #new-tab-btn:hover,#new-incognito-btn:hover{background:color-mix(in srgb, var(--t1) 8%, transparent);color:var(--t1)}
 #new-tab-btn svg,#new-incognito-btn svg{width:16px;height:16px}
 
-#toolbar{display:flex;align-items:center;gap:2px;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10}
+#toolbar{display:flex;align-items:center;gap:2px;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--brd);z-index:10;position:relative}
+#load-bar{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--acc);opacity:0;
+  transition:width .35s ease,opacity .2s ease;z-index:20}
+#load-bar.show{opacity:1}
 .nav-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;
   background:transparent;color:var(--t2);cursor:pointer;border-radius:50%;flex-shrink:0;transition:background .15s,color .15s}
 .nav-btn:hover{background:var(--input);color:var(--t1)}
@@ -1022,6 +1029,7 @@ input:checked+.slider:before{transform:translateX(16px)}
 <div id="app">
   <div id="tabs-bar"></div>
   <div id="toolbar">
+    <div id="load-bar"></div>
     <button class="nav-btn" id="btn-back" onclick="sr('back')" title="Back (Alt+←)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
     </button>
@@ -1258,6 +1266,9 @@ function renderExtensions(list){
 }
 function toggleExt(i,enabled){ const e=(window._extList||[])[i]; if(e) sr('ext-toggle',{id:e.id,enabled}); }
 
+function showLoading(){ const b=document.getElementById('load-bar'); b.style.width='0'; b.classList.add('show'); requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ b.style.width='75%'; }); }); }
+function hideLoading(){ const b=document.getElementById('load-bar'); b.style.width='100%'; setTimeout(()=>{ b.classList.remove('show'); setTimeout(()=>{ b.style.width='0'; }, 200); }, 150); }
+
 function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
 function v(id){return document.getElementById(id).value}
@@ -1364,17 +1375,33 @@ fn render_page(html_out: &str, url: &str, px: &tao::event_loop::EventLoopProxy<E
             h
         )));
         let _ = px.send_event(Ev::Js(format!("document.getElementById('url-bar').value={};", u)));
+        let _ = px.send_event(Ev::Js("hideLoading();".into()));
+    }
+}
+
+/// Caches the rendered HTML on the pinned tab and paints it — but only if no newer
+/// navigation has started on that tab since this fetch began. Without this guard, switching
+/// tabs quickly (or re-searching before an earlier slow request finished) could let a stale,
+/// late-arriving response overwrite content from a request that actually finished first.
+async fn commit_render(html: &str, url: &str, tab_idx: usize, my_gen: u64, st: &Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>) {
+    let mut g = st.write().await;
+    if let Some(t) = g.tabs.get_mut(tab_idx) {
+        if t.load_gen == my_gen {
+            t.last_html = Some(html.to_string());
+            drop(g);
+            render_page(html, url, px);
+        }
     }
 }
 
 // ======================
 // LOAD URL
 // ======================
-async fn load_url(url: String, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
-    load_url_method(url, "GET", None, st, px, record).await;
+async fn load_url(url: String, tab_idx: usize, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
+    load_url_method(url, tab_idx, "GET", None, st, px, record).await;
 }
 
-async fn load_url_method(url: String, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
+async fn load_url_method(url: String, tab_idx: usize, method: &str, body: Option<serde_json::Value>, st: Arc<RwLock<state::State>>, px: &tao::event_loop::EventLoopProxy<Ev>, record: bool) {
     // DuckDuckGo's /html/ results wrap every outbound link through a duckduckgo.com/l/?uddg=...
     // click-redirect. That's an extra network hop through a host we don't need to touch at all —
     // decode the real target and go there directly instead.
@@ -1388,11 +1415,17 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         } else { url }
     };
 
-    let cfg = { let g = st.read().await; g.active_tab().cfg.clone() };
+    let (cfg, my_gen) = {
+        let mut g = st.write().await;
+        match g.tabs.get_mut(tab_idx) {
+            Some(t) => { t.load_gen += 1; (t.cfg.clone(), t.load_gen) }
+            None => return,
+        }
+    };
     let load_started_safe = url.replace('\'', "\\'").replace('\n', " ");
     if url != "nexus://home" {
         let proxy_note = if cfg.tor { " via Tor" } else if cfg.warp { " via WARP" } else { "" };
-        let _ = px.send_event(Ev::Js(format!("lg('→ loading {}{}');", load_started_safe, proxy_note)));
+        let _ = px.send_event(Ev::Js(format!("lg('→ loading {}{}'); showLoading();", load_started_safe, proxy_note)));
     }
     
     if url == "nexus://home" {
@@ -1414,10 +1447,12 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
         render_page(home_html, &url, px);
         if record {
             let mut g = st.write().await;
-            let t = g.active_tab_mut();
-            t.push_hist(url.clone());
-            t.url = url;
-            t.name = "New Tab".into();
+            if let Some(t) = g.tabs.get_mut(tab_idx) {
+                t.push_hist(url.clone());
+                t.url = url;
+                t.name = "New Tab".into();
+                t.last_html = Some(home_html.to_string());
+            }
             update_tabs(&g, px);
         }
         return;
@@ -1425,7 +1460,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
 
     if cfg.sinkhole && sinkhole::check(&url) {
         let safe_url = url.replace('\'', "\\'").replace('\n', " ");
-        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE blocked: {}');", safe_url)));
+        let _ = px.send_event(Ev::Js(format!("lg('SINKHOLE blocked: {}'); hideLoading();", safe_url)));
         let blocked = { let mut g = st.write().await; g.blocked += 1; g.blocked };
         let _ = px.send_event(Ev::Js(format!("lg('Total blocked: {}');", blocked)));
         return;
@@ -1433,9 +1468,10 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
     
     let client = {
         let mut g = st.write().await;
-        let t = g.active_tab_mut();
-        t.update_client();
-        t.client.clone().unwrap_or_else(reqwest::Client::new)
+        match g.tabs.get_mut(tab_idx) {
+            Some(t) => { t.update_client(); t.client.clone().unwrap_or_else(reqwest::Client::new) }
+            None => return,
+        }
     };
     
     let secure_url = if url.starts_with("http://") && !url.contains("localhost") && !url.contains("127.0.0.1") {
@@ -1508,34 +1544,34 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
                     if let Some(body_end) = lower_out.rfind("</body>") { html_out.insert_str(body_end, &ext_inj); }
                     else { html_out.push_str(&ext_inj); }
                 }
-                render_page(&html_out, &clean_url, px);
+                commit_render(&html_out, &clean_url, tab_idx, my_gen, &st, px).await;
                 }
                 Err(_) => {
                     let msg = format!("This page sent a response NEXUS couldn't decode as text (HTTP {}). It may require a browser feature NEXUS doesn't yet support.", status.as_u16());
                     let html = format!(r#"<html><body style="font-family:sans-serif;padding:60px;text-align:center;color:#5f6368"><h2>Couldn't display this page</h2><p>{}</p></body></html>"#, msg);
-                    render_page(&html, &clean_url, px);
+                    commit_render(&html, &clean_url, tab_idx, my_gen, &st, px).await;
                 }
             }
         } else if content_type.contains("image/") {
             let html = format!(r#"<html><body style="margin:0;background:#0e0e0e;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="{}" style="max-width:100%;max-height:100%;"></body></html>"#, clean_url);
-            render_page(&html, &clean_url, px);
+            commit_render(&html, &clean_url, tab_idx, my_gen, &st, px).await;
         } else {
             let safe_url = clean_url.replace('\'', "\\'").replace('\n', " ");
-            let _ = px.send_event(Ev::Js(format!("lg('Downloading: {}');", safe_url)));
+            let _ = px.send_event(Ev::Js(format!("lg('Downloading: {}'); hideLoading();", safe_url)));
             tokio::spawn(dl::turbo(clean_url.clone(), st.clone()));
             return;
         }
         
         if record {
             let mut g = st.write().await;
-            let t = g.active_tab_mut();
-            t.push_hist(clean_url.clone());
-            t.url = clean_url.clone();
-            if let Ok(parsed) = url::Url::parse(&clean_url) {
-                t.name = parsed.host_str().unwrap_or("New Tab").to_string();
+            if let Some(t) = g.tabs.get_mut(tab_idx) {
+                t.push_hist(clean_url.clone());
+                t.url = clean_url.clone();
+                if let Ok(parsed) = url::Url::parse(&clean_url) {
+                    t.name = parsed.host_str().unwrap_or("New Tab").to_string();
+                }
             }
-
-            let title = t.name.clone();
+            let title = g.tabs.get(tab_idx).map(|t| t.name.clone()).unwrap_or_default();
             let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
             g.history.push(state::HistoryEntry { url: clean_url.clone(), title, time });
             state::save_history(&g.history);
@@ -1561,7 +1597,7 @@ async fn load_url_method(url: String, method: &str, body: Option<serde_json::Val
             <p style="color:#80868b;font-size:13px">This can happen if the site is down, your network is blocking it,
             or (if Tor/WARP is on) the proxy isn't actually running.</p>
             </body></html>"#, safe_display, elapsed_ms, safe_err_display);
-        render_page(&html, &clean_url, px);
+        commit_render(&html, &clean_url, tab_idx, my_gen, &st, px).await;
     }
 }
 
@@ -1634,6 +1670,7 @@ fn main() {
                 if i != active_idx && !tab.frozen && tab.last_active.elapsed() > Duration::from_secs(300) {
                     tab.frozen = true;
                     tab.client = None;
+                    tab.last_html = None;
                     changed = true;
                 }
             }
@@ -1665,11 +1702,15 @@ fn main() {
             
             handle.spawn(async move {
                 match a.as_str() {
-                    "nav" | "nav-internal" => if let Some(u) = d.as_str().map(search::resolve) { load_url(u, ist.clone(), &ipx, true).await; },
+                    "nav" | "nav-internal" => if let Some(u) = d.as_str().map(search::resolve) {
+                        let idx = { ist.read().await.active_tab };
+                        load_url(u, idx, ist.clone(), &ipx, true).await;
+                    },
                     "nav-post" => {
                         let url = d["url"].as_str().unwrap_or("").to_string();
                         let body = d["body"].clone();
-                        load_url_method(url, "POST", Some(body), ist.clone(), &ipx, true).await;
+                        let idx = { ist.read().await.active_tab };
+                        load_url_method(url, idx, "POST", Some(body), ist.clone(), &ipx, true).await;
                     }
                     "new-tab-url" => if let Some(url) = d.as_str() {
                         let mut g = ist.write().await;
@@ -1678,7 +1719,7 @@ fn main() {
                         update_tabs(&g, &ipx);
                         let u = url.to_string();
                         drop(g);
-                        load_url(u, ist.clone(), &ipx, true).await;
+                        load_url(u, idx, ist.clone(), &ipx, true).await;
                     }
                     "console-log" => if let Some(msg) = d.as_str() {
                         let safe_msg = msg.replace('\'', "\\'").replace('\n', " ");
@@ -1700,9 +1741,9 @@ fn main() {
                         }
                         ipx.send_event(Ev::Js("lg('Saved to bookmarks');".into())).ok();
                     }
-                    "back" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_back() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
-                    "fwd" => { let mut g = ist.write().await; if let Some(u) = g.active_tab_mut().go_fwd() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
-                    "ref" => { let g = ist.read().await; if let Some(u) = g.active_tab().current() { drop(g); load_url(u, ist.clone(), &ipx, false).await; } }
+                    "back" => { let mut g = ist.write().await; let idx = g.active_tab; if let Some(u) = g.active_tab_mut().go_back() { drop(g); load_url(u, idx, ist.clone(), &ipx, false).await; } }
+                    "fwd" => { let mut g = ist.write().await; let idx = g.active_tab; if let Some(u) = g.active_tab_mut().go_fwd() { drop(g); load_url(u, idx, ist.clone(), &ipx, false).await; } }
+                    "ref" => { let g = ist.read().await; let idx = g.active_tab; if let Some(u) = g.active_tab().current() { drop(g); load_url(u, idx, ist.clone(), &ipx, false).await; } }
                     "inc" => { let c = { let mut g = ist.write().await; g.blocked += 1; g.blocked }; ipx.send_event(Ev::Js(format!("lg('Blocked request: {}');", c))).ok(); }
                     "shld" => if let (Some(s), Some(v)) = (d["s"].as_str(), d["v"].as_bool()) {
                         let mut g = ist.write().await;
@@ -1764,8 +1805,21 @@ fn main() {
                         let mut g = ist.write().await; if g.close_tab(i as usize) { ipx.send_event(Ev::CloseTab(i as usize)).ok(); update_tabs(&g, &ipx); }
                     },
                     "switch-tab" => if let Some(i) = d.as_u64() {
-                        let mut g = ist.write().await; g.switch_tab(i as usize); update_tabs(&g, &ipx);
-                        if let Some(url) = g.active_tab().current() { drop(g); load_url(url, ist.clone(), &ipx, false).await; }
+                        let idx = i as usize;
+                        let mut g = ist.write().await;
+                        g.switch_tab(idx);
+                        update_tabs(&g, &ipx);
+                        let cached = g.tabs.get(idx).and_then(|t| {
+                            if t.frozen { None } else { t.last_html.clone().map(|h| (h, t.url.clone())) }
+                        });
+                        match cached {
+                            Some((html, url)) => { drop(g); render_page(&html, &url, &ipx); }
+                            None => {
+                                let url = g.tabs.get(idx).map(|t| t.url.clone());
+                                drop(g);
+                                if let Some(url) = url { load_url(url, idx, ist.clone(), &ipx, false).await; }
+                            }
+                        }
                     },
                     "unfreeze-tab" => if let Some(i) = d.as_u64() {
                         let idx = i as usize;
@@ -1777,7 +1831,7 @@ fn main() {
                             }
                         };
                         let mut g = ist.write().await; g.switch_tab(idx); update_tabs(&g, &ipx); drop(g);
-                        load_url(url, ist.clone(), &ipx, false).await;
+                        load_url(url, idx, ist.clone(), &ipx, false).await;
                     },
                     "password-detected" => {
                         let (url, user, pass) = (d["url"].as_str().unwrap_or(""), d["username"].as_str().unwrap_or(""), d["password"].as_str().unwrap_or(""));
@@ -1884,7 +1938,7 @@ fn main() {
                         let st_read = st.read().await;
                         let first_url = st_read.tabs[0].url.clone();
                         drop(st_read);
-                        load_url(first_url, st, &px, false).await; 
+                        load_url(first_url, 0, st, &px, false).await; 
                     }
                 });
             }
@@ -1896,7 +1950,10 @@ fn main() {
                 if let Event::UserEvent(Ev::NewTab(_)) = ev {
                     handle_for_loop.spawn({ 
                         let (st, px) = (st.clone(), px.clone()); 
-                        async move { load_url("nexus://home".into(), st, &px, false).await; } 
+                        async move {
+                            let idx = st.read().await.active_tab;
+                            load_url("nexus://home".into(), idx, st, &px, false).await;
+                        } 
                     });
                 }
             }
