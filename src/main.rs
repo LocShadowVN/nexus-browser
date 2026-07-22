@@ -286,10 +286,9 @@ mod state {
         }
     }
 
-    // Sử dụng tokio::fs để không bao giờ block luồng UI
-    pub async fn save_session(tabs: &[TabState]) {
-        let urls: Vec<String> = tabs.iter().filter(|t| t.url != "nexus://home").map(|t| t.url.clone()).collect();
-        let _ = tokio::fs::write("session.json", serde_json::to_string(&urls).unwrap_or_default()).await;
+    pub async fn save_session(urls: &[String]) {
+        let filtered: Vec<String> = urls.iter().filter(|u| **u != "nexus://home").cloned().collect();
+        let _ = tokio::fs::write("session.json", serde_json::to_string(&filtered).unwrap_or_default()).await;
     }
 
     pub fn load_session() -> Vec<String> {
@@ -572,7 +571,6 @@ mod vault {
         String::from_utf8(cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_slice()).ok()?).ok()
     }
     
-    // Fix Copilot Issue: Sửa modulo bias khi sinh mật khẩu
     pub fn generate(len: usize) -> String {
         const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
         let mut rng = rand::thread_rng();
@@ -1496,18 +1494,18 @@ async fn load_url_method(url: String, tab_idx: usize, method: &str, body: Option
         parsed_url.to_string()
     } else { secure_url.clone() };
     
-    // Fix Copilot Issue: Support POST multipart properly without crashing on non-string JSON values
+    // Sửa lỗi Compile: Tránh dùng reqwest::multipart (vì feature chưa bật). Dùng HashMap form thường.
     let req = if method == "POST" {
-        let mut form = reqwest::multipart::Form::new();
+        let mut form = HashMap::new();
         if let Some(b) = body {
             if let Some(obj) = b.as_object() {
                 for (k, v) in obj {
                     let val_str = if let Some(s) = v.as_str() { s.to_string() } else { v.to_string() };
-                    form = form.text(k.clone(), val_str);
+                    form.insert(k.clone(), val_str);
                 }
             }
         }
-        client.post(&clean_url).multipart(form)
+        client.post(&clean_url).form(&form)
     } else {
         client.get(&clean_url)
     };
@@ -1564,7 +1562,6 @@ async fn load_url_method(url: String, tab_idx: usize, method: &str, body: Option
                 }
             }
         } else if content_type.contains("image/") {
-            // Fix Bug: Escape URL trong img src để tránh DOM XSS
             let safe_img_url = clean_url.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
             let html = format!(r#"<html><body style="margin:0;background:#0e0e0e;display:flex;justify-content:center;align-items:center;height:100vh;"><img src="{}" style="max-width:100%;max-height:100%;"></body></html>"#, safe_img_url);
             commit_render(&html, &clean_url, tab_idx, my_gen, &st, px).await;
@@ -1589,16 +1586,17 @@ async fn load_url_method(url: String, tab_idx: usize, method: &str, body: Option
             g.history.push(state::HistoryEntry { url: clean_url.clone(), title, time });
             
             let hist_data = g.history.clone();
+            
+            // Fix lỗi Clone TabState: Trích xuất mảng URL để save session
+            let st_urls: Vec<String> = g.tabs.iter().map(|t| t.url.clone()).collect();
             update_tabs(&g, px);
             
-            let st_clone = g.tabs.clone();
             let hist_clone = g.history.clone();
             drop(g);
             
-            // Fix Bug: Non-blocking async file I/O
             tokio::spawn(async move {
                 state::save_history(&hist_clone).await;
-                state::save_session(&st_clone).await;
+                state::save_session(&st_urls).await;
             });
 
             if let Ok(hd) = serde_json::to_string(&hist_data) {
@@ -1636,8 +1634,9 @@ fn update_tabs(state: &state::State, px: &tao::event_loop::EventLoopProxy<Ev>) {
         let _ = px.send_event(Ev::Js(format!(r#"if(window.updateTabs)window.updateTabs({{"tabs":{},"activeTab":{}}})"#, t, state.active_tab)));
     }
 
-    let st_clone = state.tabs.clone();
-    tokio::spawn(async move { state::save_session(&st_clone).await; });
+    // Fix lỗi Clone TabState: Trích xuất mảng URL
+    let st_urls: Vec<String> = state.tabs.iter().map(|t| t.url.clone()).collect();
+    tokio::spawn(async move { state::save_session(&st_urls).await; });
 }
 
 // ======================
@@ -1656,7 +1655,6 @@ fn main() {
     let mut initial = state::State::new();
     initial.tabs[0].vault = Some(vault::load());
     
-    // Fix Bug: Không clear vault khi load session
     let saved_tabs = state::load_session();
     if !saved_tabs.is_empty() {
         let vault_data = initial.tabs[0].vault.clone();
@@ -1696,7 +1694,6 @@ fn main() {
                 if i != active_idx && !tab.frozen && tab.last_active.elapsed() > Duration::from_secs(300) {
                     tab.frozen = true;
                     tab.client = None; // Free network resources
-                    // Fix Copilot Issue: Keep last_html to restore instantly
                     changed = true;
                 }
             }
@@ -1777,10 +1774,13 @@ fn main() {
                         g.bookmarks.push(state::Bookmark { title, url: url.to_string() });
                         let bms = g.bookmarks.clone();
                         drop(g);
-                        tokio::spawn(async move { state::save_bookmarks(&bms).await; });
+                        
+                        // Fix lỗi borrow after move: Serialize trước khi spawn
                         if let Ok(b) = serde_json::to_string(&bms) {
                             ipx.send_event(Ev::Js(format!(r#"if(window.renderBookmarks)window.renderBookmarks({})"#, b))).ok();
                         }
+                        tokio::spawn(async move { state::save_bookmarks(&bms).await; });
+                        
                         ipx.send_event(Ev::Js("lg('Saved to bookmarks');".into())).ok();
                     }
                     "back" => { let mut g = ist.write().await; let idx = g.active_tab; if let Some(u) = g.active_tab_mut().go_back() { drop(g); load_url(u, idx, ist.clone(), &ipx, false).await; } }
