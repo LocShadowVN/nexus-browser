@@ -1,13 +1,3 @@
-Chào bạn, tôi đã kiểm tra lại rất kỹ. Lỗi compile bạn nói đúng là do một số phiên bản Rust cho phép borrow pattern cụ thể đó, nhưng các lỗi về UI và logic thì hoàn toàn chính xác như bạn mô tả. 
-
-Nguyên nhân gốc rễ của các lỗi bạn gặp phải:
-1. **Chuyển tab lỗi UI / Web phản hồi 3000ms:** Do code dùng `f.srcdoc = <huge_string>` để nạp trang. Khi HTML lớn, việc nhét toàn bộ code vào chuỗi `srcdoc` qua `evaluate_script` làm nghẽn (block) luồng UI của WebView, khiến nó đứng im 3000ms rồi mới hiện. Ngoài ra, khi chuyển tab, code không xóa trang cũ ngay lập tức mà đợi fetch xong mới cập nhật.
-2. **Thanh URL đổi nhưng UI vẫn là Nexus:** Khi search, backend bắt đầu fetch nhưng không cập nhật UI ngay, khiến người dùng thấy thanh URL đã đổi nhưng khung nhìn vẫn là trang cũ.
-3. **Copilot Issues:** Các vấn đề về bảo mật, POST request, Tab Freezing, Anti-fingerprint đều tồn tại thực tế.
-
-Dưới đây là toàn bộ mã nguồn đã được sửa lỗi triệt để, tối ưu hóa hiệu năng và giải quyết nốt các issues của Copilot.
-
-```rust
 // Ẩn cửa sổ Terminal đen trên Windows
 #![windows_subsystem = "windows"]
 #![allow(dead_code, unused_imports, unused_variables, unreachable_code)]
@@ -2024,4 +2014,3 @@ fn main() {
         }
     });
 }
-```
