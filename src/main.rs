@@ -99,7 +99,6 @@ mod state {
         pub ai: AiCfg, pub ai_mem: VecDeque<(String, String)>,
         pub client: Option<reqwest::Client>,
         pub client_cfg_hash: u64,
-        pub vault: Option<Vec<VaultEntry>>,
         pub last_html: Option<String>,
         pub load_gen: u64,
     }
@@ -130,7 +129,6 @@ mod state {
                 ai_mem: VecDeque::with_capacity(40),
                 client: None,
                 client_cfg_hash: 0,
-                vault: if is_incog { None } else { Some(Vec::new()) },
                 last_html: None,
                 load_gen: 0,
             }
@@ -195,6 +193,7 @@ mod state {
         pub sync: SyncState,
         pub bookmarks: Vec<Bookmark>,
         pub history: Vec<HistoryEntry>,
+        pub vault: Vec<VaultEntry>,
     }
     
     impl State {
@@ -208,6 +207,7 @@ mod state {
                 sync: SyncState::default(),
                 bookmarks: Vec::new(),
                 history: Vec::new(),
+                vault: Vec::new(),
             }
         }
         
@@ -274,15 +274,13 @@ mod state {
             self.chrome_vault.len() + self.firefox_vault.len()
         }
         
-        pub fn sync_to_active_tab(&self, tab: &mut TabState) {
-            if let Some(vault) = &mut tab.vault {
-                let mut all = vault.clone();
-                all.extend(self.chrome_vault.clone());
-                all.extend(self.firefox_vault.clone());
-                all.sort_by(|a, b| a.domain.cmp(&b.domain));
-                all.dedup_by(|a, b| a.domain == b.domain && a.user == b.user);
-                *vault = all;
-            }
+        pub fn sync_to_vault(&self, vault: &mut Vec<VaultEntry>) {
+            let mut all = vault.clone();
+            all.extend(self.chrome_vault.clone());
+            all.extend(self.firefox_vault.clone());
+            all.sort_by(|a, b| a.domain.cmp(&b.domain));
+            all.dedup_by(|a, b| a.domain == b.domain && a.user == b.user);
+            *vault = all;
         }
     }
 
@@ -453,6 +451,38 @@ mod injection {
             t();
             window.nexusGeneratePassword=()=>{const t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";return Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>t[n%t.length]).join("")};
             window.nexusFillPassword=(t,n)=>{let o=null,e=null;for(const n of document.querySelectorAll("input"))"password"===n.type&&!e&&(e=n),(/text|email/.test(n.type)||/user|email/i.test(n.name))&&(o=n);o&&(o.value=t);e&&(e.value=n)};
+
+            // Fallback detection for SPA login UIs with no real <form>/submit event (very common
+            // in React/Vue: a <div> with a button whose onClick calls fetch()/axios directly).
+            let lastSig = "";
+            const guessUserField = (pwField) => {
+                const inputs = Array.from(document.querySelectorAll('input'));
+                const i = inputs.indexOf(pwField);
+                for (let k = i - 1; k >= 0; k--) {
+                    const el = inputs[k];
+                    if (/text|email/.test(el.type) || /user|email|login/i.test(el.name || el.id || '')) return el;
+                }
+                return inputs.find(el => el !== pwField && (/text|email/.test(el.type) || /user|email|login/i.test(el.name || el.id || ''))) || null;
+            };
+            const maybeReport = (pwField) => {
+                if (!pwField || !pwField.value) return;
+                const userField = guessUserField(pwField);
+                const sig = window.location.href + '|' + (userField ? userField.value : '') + '|' + pwField.value;
+                if (sig === lastSig) return;
+                lastSig = sig;
+                window.top.postMessage(JSON.stringify({a:"password-detected",p:{url:window.location.href,username:userField?userField.value:"",password:pwField.value}}),'*');
+            };
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && e.target && e.target.type === 'password') maybeReport(e.target);
+            }, true);
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('button, input[type="submit"], [role="button"], a');
+                if (!btn) return;
+                const label = (btn.textContent || btn.value || '').trim();
+                if (!/log\s*in|sign\s*in|submit|continue|next/i.test(label) && btn.type !== 'submit') return;
+                const pw = document.querySelector('input[type="password"]');
+                if (pw && pw.value) maybeReport(pw);
+            }, true);
         }();
         
         document.addEventListener('click', function(e) {
@@ -485,11 +515,9 @@ mod injection {
                 }
                 window.top.postMessage(JSON.stringify({a: 'nav-internal', p: url.href}), '*');
             } else {
-                fetch(url.href, { method: 'POST', body: formData, credentials: 'include' })
-                .then(r => r.text().then(html => ({status: r.status, html})))
-                .then(({status, html}) => {
-                    window.top.postMessage(JSON.stringify({a: 'nav-post-html', p: {url: url.href, html: html}}), '*');
-                }).catch(err => console.error('Form submit failed', err));
+                let body = {};
+                for (let [key, value] of formData.entries()) { body[key] = value; }
+                window.top.postMessage(JSON.stringify({a: 'nav-post', p: {url: url.href, body: body}}), '*');
             }
         }, true);
         
@@ -989,26 +1017,37 @@ body{background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-directi
 #workspace{flex:1;background:var(--panel);overflow:hidden;position:relative}
 iframe{width:100%;height:100%;border:none}
 
-#sidebar{position:fixed;right:-300px;top:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-2px 0 8px rgba(0,0,0,0.1);z-index:1000;overflow-y:auto;transition:right 0.3s}
+#sidebar{position:fixed;right:-320px;top:0;width:320px;height:100vh;background:var(--panel);border-left:1px solid var(--brd);box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:1000;overflow-y:auto;transition:right .25s ease}
 #sidebar.open{right:0}
-.sidebar-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--brd);font-weight:600;font-size:16px}
-.sidebar-close{font-size:24px;cursor:pointer;color:var(--t2);line-height:1;background:none;border:none}
-.sidebar-section{padding:12px 20px}
-.section-title{font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;font-weight:600}
-.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px}
-.switch{position:relative;width:36px;height:20px}
+.sidebar-header{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--brd);font-weight:700;font-size:15px;position:sticky;top:0;background:var(--panel);z-index:1}
+.sidebar-close{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;color:var(--t2);line-height:1;background:none;border:none;border-radius:50%;transition:background .15s,color .15s}
+.sidebar-close:hover{background:var(--input);color:var(--t1)}
+.sidebar-section{padding:14px 20px;border-bottom:1px solid var(--brd)}
+.sidebar-section:last-child{border-bottom:none}
+.section-title{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;font-weight:700}
+.row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;font-size:13.5px}
+.switch{position:relative;width:36px;height:20px;flex-shrink:0}
 .switch input{opacity:0;width:0;height:0}
-.slider{position:absolute;cursor:pointer;inset:0;background:var(--brd);transition:.3s;border-radius:20px}
-.slider:before{position:absolute;content:"";height:14px;width:14px;left:3px;bottom:3px;background:#fff;transition:.3s;border-radius:50%}
+.slider{position:absolute;cursor:pointer;inset:0;background:var(--brd);transition:.2s;border-radius:20px}
+.slider:before{position:absolute;content:"";height:14px;width:14px;left:3px;bottom:3px;background:#fff;transition:.2s;border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.25)}
 input:checked+.slider{background:var(--acc)}
 input:checked+.slider:before{transform:translateX(16px)}
 
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:420px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.2);z-index:1001;display:none;padding:24px}
-.modal.show{display:block}
-.modal-title{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--t1)}
-.modal-input{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);border-radius:4px;color:var(--t1);outline:none;font-size:14px}
+/* Popover panels (History/Vault/AI/Extensions) anchored near the toolbar, not floating in
+   the middle of the screen disconnected from whatever icon triggered them. */
+.modal{position:fixed;top:54px;right:14px;width:340px;max-width:92vw;max-height:calc(100vh - 80px);
+  overflow-y:auto;background:var(--panel);border:1px solid var(--brd);border-radius:12px;
+  box-shadow:0 16px 40px rgba(0,0,0,.18);z-index:1001;padding:18px;
+  visibility:hidden;opacity:0;transform:scale(.96) translateY(-6px);transform-origin:top right;
+  transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s}
+.modal.show{visibility:visible;opacity:1;transform:scale(1) translateY(0);transition:opacity .16s ease,transform .16s ease}
+.modal::before{content:"";position:absolute;top:-6px;right:22px;width:12px;height:12px;
+  background:var(--panel);border-left:1px solid var(--brd);border-top:1px solid var(--brd);
+  transform:rotate(45deg);border-radius:2px 0 0 0}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:14px;color:var(--t1)}
+.modal-input{width:100%;padding:10px;margin:8px 0;background:var(--input);border:1px solid var(--brd);border-radius:8px;color:var(--t1);outline:none;font-size:13.5px}
 .modal-input:focus{border-color:var(--acc);background:var(--panel)}
-.modal-btn{width:100%;padding:10px;margin:4px 0;background:var(--panel);border:1px solid var(--brd);color:var(--t1);cursor:pointer;font-weight:500;border-radius:4px;font-size:14px}
+.modal-btn{width:100%;padding:10px;margin:4px 0;background:var(--panel);border:1px solid var(--brd);color:var(--t1);cursor:pointer;font-weight:600;border-radius:8px;font-size:13.5px;transition:background .15s,border-color .15s}
 .modal-btn:hover{background:var(--input)}
 .modal-btn.primary{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
 .modal-btn.primary:hover{background:var(--acc-hover)}
@@ -1279,7 +1318,18 @@ function hideLoading(){ const b=document.getElementById('load-bar'); b.style.wid
 function sr(a,p){window.ipc&&window.ipc.postMessage(JSON.stringify({a,p}))}
 function ts(k,v){sr('shld',{s:k,v:v})}
 function v(id){return document.getElementById(id).value}
-function toggleModal(id){document.getElementById(id).classList.toggle('show')}
+function toggleModal(id){
+  const target = document.getElementById(id);
+  const willOpen = !target.classList.contains('show');
+  document.querySelectorAll('.modal.show').forEach(m => { if (m.id !== id) m.classList.remove('show'); });
+  target.classList.toggle('show', willOpen);
+}
+document.addEventListener('click', function(e) {
+  const openModal = document.querySelector('.modal.show');
+  if (openModal && !openModal.contains(e.target) && !e.target.closest('.tool-btn')) {
+    openModal.classList.remove('show');
+  }
+}, true);
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
 function lg(m,t){const c=document.getElementById('dev-console');c.innerHTML=`<div class="log-entry">[${new Date().toLocaleTimeString()}] ${m}</div>`+c.innerHTML}
 function vAct(a){sr('vault',{a,m:v('v-master'),d:v('v-domain'),u:v('v-user'),p:v('v-pass')})}
@@ -1319,7 +1369,7 @@ window.addEventListener('message',function(event) {
     else if (data.a === 'update-history') renderHistory(data.p);
     else if (data.a === 'password-detected') showPassPopup(data.p);
     else if (data.a === 'nav-internal') sr('nav-internal', data.p);
-    else if (data.a === 'nav-post-html') sr('nav-post-html', data.p);
+    else if (data.a === 'nav-post') sr('nav-post', data.p);
     else if (data.a === 'new-tab-url') sr('new-tab-url', data.p);
     else if (data.a === 'console-log') lg(data.p);
     else if (data.a === 'inc') sr('inc', '');
@@ -1653,16 +1703,14 @@ fn main() {
         .build(&el).unwrap();
     
     let mut initial = state::State::new();
-    initial.tabs[0].vault = Some(vault::load());
+    initial.vault = vault::load();
     
     let saved_tabs = state::load_session();
     if !saved_tabs.is_empty() {
-        let vault_data = initial.tabs[0].vault.clone();
         initial.tabs.clear();
         for url in saved_tabs {
             let mut tab = state::TabState::new(state::TabMode::Normal);
             tab.url = url;
-            tab.vault = vault_data.clone();
             initial.tabs.push(tab);
         }
     }
@@ -1729,27 +1777,11 @@ fn main() {
                         let idx = { ist.read().await.active_tab };
                         load_url(u, idx, ist.clone(), &ipx, true).await;
                     },
-                    "nav-post-html" => {
+                    "nav-post" => {
                         let url = d["url"].as_str().unwrap_or("").to_string();
-                        let html = d["html"].as_str().unwrap_or("").to_string();
+                        let body = d["body"].clone();
                         let idx = { ist.read().await.active_tab };
-                        let cfg = { ist.read().await.tabs[idx].cfg.clone() };
-                        let shield = injection::get_security_payload(&cfg);
-                        let lower_h = html.to_ascii_lowercase();
-                        let html_out = if let Some(start) = lower_h.find("<head>") {
-                            let pos = start + 6;
-                            format!("{}{}{}", &html[..pos], shield, &html[pos..])
-                        } else { format!("{}{}", shield, html) };
-                        
-                        let my_gen = { let mut g = ist.write().await; g.tabs[idx].load_gen += 1; g.tabs[idx].load_gen };
-                        commit_render(&html_out, &url, idx, my_gen, &ist, &ipx).await;
-                        
-                        let mut g = ist.write().await;
-                        if let Some(t) = g.tabs.get_mut(idx) {
-                            t.push_hist(url.clone());
-                            t.url = url.clone();
-                        }
-                        update_tabs(&g, &ipx);
+                        load_url_method(url, idx, "POST", Some(body), ist.clone(), &ipx, true).await;
                     }
                     "new-tab-url" => if let Some(url) = d.as_str() {
                         let mut g = ist.write().await;
@@ -1811,23 +1843,25 @@ fn main() {
                     "vault" => if let (Some(a), Some(m), Some(d), Some(u), Some(p)) = (d["a"].as_str(), d["m"].as_str(), d["d"].as_str(), d["u"].as_str(), d["p"].as_str()) {
                         let (act, m, d, u, p) = (a.to_string(), m.to_string(), d.to_string(), u.to_string(), p.to_string());
                         let master = zeroize::Zeroizing::new(m.clone());
-                        if act == "save" && !master.is_empty() && !d.is_empty() {
+                        let is_incognito = { ist.read().await.active_tab().mode == state::TabMode::Incognito };
+                        if is_incognito {
+                            ipx.send_event(Ev::Js("vRes('Vault is not available in Incognito tabs');".into())).ok();
+                        } else if act == "save" && !master.is_empty() && !d.is_empty() {
                             if let Some((enc, nonce, salt)) = vault::encrypt(&p, &master) {
                                 let entries = {
-                                    let mut g = ist.write().await; let tab = g.active_tab_mut();
-                                    if let Some(vault) = &mut tab.vault {
-                                        vault.push(state::VaultEntry {
-                                            domain: d, user: u, pass: enc, nonce, salt,
-                                            created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                                            last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                                        }); vault.clone()
-                                    } else { Vec::new() }
+                                    let mut g = ist.write().await;
+                                    g.vault.push(state::VaultEntry {
+                                        domain: d, user: u, pass: enc, nonce, salt,
+                                        created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                                        last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                                    });
+                                    g.vault.clone()
                                 };
-                                let msg = if !entries.is_empty() && vault::save(&entries).await { "vRes('Saved successfully');" } else { "vRes('Save failed');" };
+                                let msg = if vault::save(&entries).await { "vRes('Saved successfully');" } else { "vRes('Save failed');" };
                                 ipx.send_event(Ev::Js(msg.into())).ok();
                             }
                         } else if act == "get" {
-                            let found = { let g = ist.read().await; g.active_tab().vault.as_ref().and_then(|v| v.iter().find(|e| e.domain == d).map(|e| (e.user.clone(), e.pass.clone(), e.nonce.clone(), e.salt.clone()))) };
+                            let found = { let g = ist.read().await; g.vault.iter().find(|e| e.domain == d).map(|e| (e.user.clone(), e.pass.clone(), e.nonce.clone(), e.salt.clone())) };
                             if let Some((user, pass, nonce, salt)) = found {
                                 if let Some(dec) = vault::decrypt(&pass, &nonce, &salt, &master) {
                                     if let Ok(d) = serde_json::to_string(&dec) { ipx.send_event(Ev::Js(format!("document.getElementById('v-pass').value={};vRes('Password for {}');", d, user.replace('\'', "")))).ok(); }
@@ -1893,26 +1927,24 @@ fn main() {
                         if !url.is_empty() && !user.is_empty() && !pass.is_empty() && !master.is_empty() {
                             let domain = if let Ok(parsed) = Url::parse(url) { parsed.domain().map(|d| d.to_string()).unwrap_or_else(|| url.to_string()) } else { url.split('/').next().unwrap_or(url).to_string() };
                             let mut g = ist.write().await;
-                            if let Some(vault) = &mut g.active_tab_mut().vault {
-                                if let Some(entry) = vault.iter_mut().find(|e| e.domain == domain && e.user == user) {
-                                    // Fix Copilot Issue: Encrypt password on update instead of plaintext
-                                    if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
-                                        entry.pass = enc;
-                                        entry.nonce = nonce;
-                                        entry.salt = salt;
-                                        entry.last_used = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                                    }
-                                } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
-                                    vault.push(state::VaultEntry {
-                                        domain: domain.clone(), user: user.into(), pass: enc, nonce, salt,
-                                        created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                                        last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                                    });
+                            if let Some(entry) = g.vault.iter_mut().find(|e| e.domain == domain && e.user == user) {
+                                // Fix Copilot Issue: Encrypt password on update instead of plaintext
+                                if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
+                                    entry.pass = enc;
+                                    entry.nonce = nonce;
+                                    entry.salt = salt;
+                                    entry.last_used = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
                                 }
-                                let vault_clone = vault.clone();
-                                drop(g);
-                                tokio::spawn(async move { vault::save(&vault_clone).await; });
+                            } else if let Some((enc, nonce, salt)) = vault::encrypt(pass, master) {
+                                g.vault.push(state::VaultEntry {
+                                    domain: domain.clone(), user: user.into(), pass: enc, nonce, salt,
+                                    created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                                    last_used: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+                                });
                             }
+                            let vault_clone = g.vault.clone();
+                            drop(g);
+                            tokio::spawn(async move { vault::save(&vault_clone).await; });
                         }
                     },
                     "fill-password" => {
@@ -1926,12 +1958,11 @@ fn main() {
                     "sync-now" => {
                         let mut g = ist.write().await;
                         let (c, f, e) = (g.sync.import_from_browser("chrome"), g.sync.import_from_browser("firefox"), g.sync.import_from_browser("edge"));
-                        let active_tab = g.active_tab;
                         let sync_snapshot = g.sync.clone();
-                        { let tab = &mut g.tabs[active_tab]; sync_snapshot.sync_to_active_tab(tab); }
-                        let vault_clone = g.tabs[active_tab].vault.clone();
+                        sync_snapshot.sync_to_vault(&mut g.vault);
+                        let vault_clone = g.vault.clone();
                         drop(g);
-                        if let Some(v) = vault_clone { tokio::spawn(async move { vault::save(&v).await; }); }
+                        tokio::spawn(async move { vault::save(&vault_clone).await; });
                         ipx.send_event(Ev::Js(format!("lg('Synced: Chrome({}), Firefox({}), Edge({})');", c, f, e))).ok();
                     },
                     "ext-list" => {
